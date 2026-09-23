@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import random
 from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,10 @@ from .services.classifier import analyze
 from .services.detector import MockDetector
 from .services.readings import persist_reading
 
-FARM_TZ = ZoneInfo("America/Recife")
+try:
+    FARM_TZ = ZoneInfo("America/Recife")
+except ZoneInfoNotFoundError:  # Windows sem o pacote tzdata
+    FARM_TZ = timezone(timedelta(hours=-3), "America/Recife")
 HISTORY_DAYS = 30
 DEMO_PASSWORD = "osais2026"
 
