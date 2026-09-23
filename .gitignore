@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+*.db
+storage/*
+!storage/.gitkeep
+models/*.pt
+ml/runs/
+ml/datasets/
+.pytest_cache/
+edge/queue/
+iot/esp32-cam/osais_cam/config.h
+!models/.gitkeep

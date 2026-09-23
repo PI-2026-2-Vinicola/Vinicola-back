@@ -1,0 +1,23 @@
+# Dataset YOLO da OSAIS — cachos por variedade + anomalias visuais.
+# Estrutura esperada:
+#   ml/datasets/osais-grapes/images/{train,val,test}/*.jpg
+#   ml/datasets/osais-grapes/labels/{train,val,test}/*.txt   (formato YOLO: classe cx cy w h, normalizados)
+path: datasets/osais-grapes
+train: images/train
+val: images/val
+test: images/test
+
+# A ordem precisa ser idêntica a app/catalog.py → MODEL_CLASSES
+names:
+  0: cabernet_sauvignon
+  1: syrah
+  2: tempranillo
+  3: touriga_nacional
+  4: chenin_blanc
+  5: moscato_canelli
+  6: maturacao_desigual
+  7: baga_irregular
+  8: mancha_leve
+  9: podridao
+  10: baga_murcha
+  11: lesao

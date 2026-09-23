@@ -1,0 +1,53 @@
+# Sobe a API com PostgreSQL. O esquema vem do repositório Vinicola-bd (clonado ao lado deste).
+#   git clone https://github.com/PI-2026-2-Vinicola/Vinicola-bd ../Vinicola-bd
+#   docker compose up --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: osais
+      POSTGRES_USER: osais
+      POSTGRES_PASSWORD: osais
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../Vinicola-bd/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../Vinicola-bd/postgres/02_views.sql:/docker-entrypoint-initdb.d/02_views.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osais"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://osais:osais@db:5432/osais
+      JWT_SECRET: troque-este-segredo-por-um-valor-longo-e-aleatorio
+      OSAIS_DETECTOR: mock
+      SEED_DEMO: "true"
+      PUBLIC_READ: "true"
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/srv/storage
+      - ./models:/srv/models
+    depends_on:
+      db:
+        condition: service_healthy
+
+  edge:
+    build: .
+    command: ["sh", "-c", "pip install --no-cache-dir httpx && uvicorn edge.gateway:app --host 0.0.0.0 --port 8081"]
+    environment:
+      OSAIS_API_URL: http://api:8000
+    volumes:
+      - ./edge:/srv/edge
+    ports:
+      - "8081:8081"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

@@ -1,0 +1,3 @@
+# Dependências para usar o modelo YOLO real (OSAIS_DETECTOR=yolo) e treinar o modelo
+-r requirements.txt
+ultralytics>=8.2
