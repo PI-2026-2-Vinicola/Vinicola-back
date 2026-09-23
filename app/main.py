@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
@@ -17,12 +18,17 @@ from .services.detector import get_detector
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
-        if get_settings().seed_demo:
-            created = seed_demo(db)
-            if created:
-                print(f"[OSAIS] Banco populado com {created} leituras de demonstração.")
-        else:
-            seed_catalog(db)
+        try:
+            if get_settings().seed_demo:
+                created = seed_demo(db)
+                if created:
+                    print(f"[OSAIS] Banco populado com {created} leituras de demonstração.")
+            else:
+                seed_catalog(db)
+        except IntegrityError:
+            # Outro processo da API populou o banco ao mesmo tempo — os dados já existem.
+            db.rollback()
+            print("[OSAIS] Dados de demonstração já existentes; seguindo sem popular novamente.")
     yield
 
 
