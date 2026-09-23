@@ -120,7 +120,9 @@ class YoloDetector:
         dets: list[RawDetection] = []
         for xywhn, conf, cls in zip(result.boxes.xywhn.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist()):
             cx, cy, w, h = xywhn
-            dets.append(RawDetection(self.model.names[int(cls)], round(float(conf), 3), (round(cx - w / 2, 4), round(cy - h / 2, 4), round(w, 4), round(h, 4))))
+            x, y = max(0.0, cx - w / 2), max(0.0, cy - h / 2)
+            w, h = min(w, 1.0 - x), min(h, 1.0 - y)  # mantém a caixa dentro da imagem
+            dets.append(RawDetection(self.model.names[int(cls)], round(float(conf), 3), (round(x, 4), round(y, 4), round(w, 4), round(h, 4))))
         return DetectorOutput(dets, self.version)
 
 
