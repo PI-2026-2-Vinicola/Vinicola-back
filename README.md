@@ -154,6 +154,8 @@ Formatos: **CSV** (`;`, `,` ou tabulação; UTF-8 ou Latin-1), **Excel .xlsx** (
 
 Cada linha é validada (sensor e variedade cadastrados, datas não futuras, faixas numéricas, coerência qualidade × classificação); linhas repetidas no arquivo e registros já existentes no banco são identificados. A gravação acontece em uma transação, registra o resultado em `import_jobs` (com os erros por linha) e na auditoria. Duplicados podem ser ignorados ou atualizados.
 
+Colunas opcionais ausentes em leituras importadas recebem valores explícitos, nunca estimados: maturação “não informada”, condição visual igual ao rótulo da qualidade, variedade do talhão do sensor, 1 cacho por leitura e versão de análise “Importado”. Leituras importadas não têm imagem nem caixas de detecção.
+
 ## Segurança
 
 Senhas com PBKDF2-SHA256 (240 mil iterações) e política mínima; JWT com expiração; bloqueio de login por e-mail e IP; perfis `admin`, `gestor` e `operador` verificados no servidor; usuário desativado perde o acesso imediatamente; token individual por dispositivo (exibido uma vez, guardado como hash); CORS restrito; cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`; `Cache-Control: no-store` nas respostas da API; consultas parametrizadas (SQLAlchemy) e busca textual com curingas escapados; CSV exportado protegido contra injeção de fórmulas; imagens reprocessadas e sem metadados; erros internos não expõem detalhes; auditoria de logins, alterações e importações.
