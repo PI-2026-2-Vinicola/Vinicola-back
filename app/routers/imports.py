@@ -112,7 +112,8 @@ async def run_import(
 
     skipped = len(result.duplicates) - updated
     if inserted + updated == 0:
-        job_status = "falhou" if result.invalid_rows else "sem_alteracoes"
+        # Nada gravado: falha só quando nenhuma linha era aproveitável (nem nova, nem já existente).
+        job_status = "falhou" if result.invalid_rows and not result.duplicates else "sem_alteracoes"
     else:
         job_status = "parcial" if result.invalid_rows else "concluida"
     job = ImportJob(

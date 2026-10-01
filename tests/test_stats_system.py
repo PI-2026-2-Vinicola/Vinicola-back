@@ -52,7 +52,7 @@ def test_public_overview_has_only_aggregates(client, admin_headers):
 def test_system_status_and_audit(client, admin_headers, gestor_headers):
     assert client.get(f"{API}/system/status", headers=gestor_headers).status_code == 403
     st = client.get(f"{API}/system/status", headers=admin_headers).json()
-    assert st["detector"] == "color" and st["database"] == "sqlite" and st["counts"]["usuarios"] >= 2
+    assert st["detector"] == "color" and st["database"] in ("sqlite", "postgresql", "mysql") and st["counts"]["usuarios"] >= 2
     audit = client.get(f"{API}/audit", headers=admin_headers).json()
     actions = {a["action"] for a in audit["items"]}
     assert {"login", "sensor_criado"} <= actions and audit["total"] >= len(audit["items"])

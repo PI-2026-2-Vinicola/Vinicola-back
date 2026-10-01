@@ -45,6 +45,10 @@ class Sensor(Base):
     """
 
     __tablename__ = "sensors"
+    __table_args__ = (
+        CheckConstraint("battery IS NULL OR battery BETWEEN 0 AND 100", name="ck_sensors_battery"),
+        CheckConstraint("(latitude IS NULL) = (longitude IS NULL)", name="ck_sensors_coords"),
+    )
 
     id: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
@@ -72,6 +76,11 @@ class Reading(Base):
     __table_args__ = (
         CheckConstraint("quality IN ('boa','atencao','critica')", name="ck_readings_quality"),
         CheckConstraint("stage IN ('recebida','processando','analisando','concluida')", name="ck_readings_stage"),
+        CheckConstraint("source IN ('sensor','upload','importacao','demonstracao')", name="ck_readings_source"),
+        CheckConstraint(
+            "maturation IN ('desenvolvimento','pintor','maturacao','adequada','sobrematuracao','nao_informada')", name="ck_readings_maturation"
+        ),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_readings_confidence"),
         UniqueConstraint("sensor_id", "captured_at", name="uq_readings_sensor_time"),
         Index("ix_readings_captured_at", "captured_at"),
         Index("ix_readings_variety_time", "variety_id", "captured_at"),
@@ -142,6 +151,7 @@ class EnvironmentReading(Base):
     __tablename__ = "environment_readings"
     __table_args__ = (
         UniqueConstraint("sensor_id", "measured_at", name="uq_environment_sensor_time"),
+        CheckConstraint("source IN ('sensor','manual','importacao','demonstracao')", name="ck_environment_source"),
         Index("ix_environment_sensor_time", "sensor_id", "measured_at"),
     )
 
@@ -159,7 +169,10 @@ class ImportJob(Base):
     """Registro de cada importação concluída (resumo e erros por linha)."""
 
     __tablename__ = "import_jobs"
-    __table_args__ = (CheckConstraint("kind IN ('readings','sensors','environment')", name="ck_import_kind"),)
+    __table_args__ = (
+        CheckConstraint("kind IN ('readings','sensors','environment')", name="ck_import_kind"),
+        CheckConstraint("status IN ('concluida','parcial','sem_alteracoes','falhou')", name="ck_import_status"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String(20))

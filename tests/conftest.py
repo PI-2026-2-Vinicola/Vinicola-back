@@ -5,7 +5,8 @@ import pytest
 
 # Banco e diretório de imagens temporários, configurados antes de importar a aplicação.
 _tmp = tempfile.mkdtemp(prefix="oasis-test-")
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+# TEST_DATABASE_URL permite rodar a suíte contra PostgreSQL/MySQL criados pelos scripts do Vinicola-bd.
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ["STORAGE_DIR"] = f"{_tmp}/storage"
 os.environ["PUBLIC_READ"] = "false"
 os.environ["OASIS_DETECTOR"] = "color"
