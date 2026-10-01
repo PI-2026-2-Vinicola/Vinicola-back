@@ -1,4 +1,8 @@
-from datetime import datetime, timedelta, timezone
+"""Indicadores calculados no banco a partir das leituras reais (nenhum valor é estimado no frontend)."""
+
+from collections import defaultdict
+from datetime import timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
@@ -6,76 +10,198 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import reader
-from ..models import Reading, Sensor, User, Variety
-from ..schemas import DayBucketOut, QualityCount, SummaryOut, VarietyOut
+from ..models import EnvironmentReading, Reading, Sensor, User
+from ..schemas import BucketOut, EnvironmentDay, EnvironmentSummary, GroupOut, PeriodTotals, QualityCount, SummaryOut
+from ..services.sensors import status_counts
+from ..services.timeutil import farm_tz, from_db, local_date, local_hour
+from .readings import ReadingFilters
 
-router = APIRouter(tags=["Indicadores"])
+router = APIRouter(prefix="/stats", tags=["Indicadores"])
+DEFAULT_DAYS = 30
+MAX_FILLED_DAYS = 400
 
 
-def _since(days: int) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(days=days)
+def _scoped(filters: ReadingFilters) -> ReadingFilters:
+    if not filters.days and not filters.date_from:
+        filters.days = DEFAULT_DAYS
+    return filters
 
 
-@router.get("/stats/summary", response_model=SummaryOut, response_model_by_alias=True)
-def summary(days: int = Query(default=7, ge=1, le=366), variety_id: str | None = None, db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    """Indicadores do dashboard: sensores ativos, leituras, uvas analisadas, qualidade geral e alertas."""
-    base = db.query(Reading).filter(Reading.captured_at >= _since(days))
-    if variety_id:
-        base = base.filter(Reading.variety_id == variety_id)
-    counts = dict(base.with_entities(Reading.quality, func.count()).group_by(Reading.quality).all())
+def _quality_counts(query) -> QualityCount:
+    counts = dict(query.order_by(None).with_entities(Reading.quality, func.count(Reading.id)).group_by(Reading.quality).all())
     q = QualityCount(boa=counts.get("boa", 0), atencao=counts.get("atencao", 0), critica=counts.get("critica", 0))
     q.total = q.boa + q.atencao + q.critica
-    clusters, avg_conf = base.with_entities(func.coalesce(func.sum(Reading.clusters_detected), 0), func.coalesce(func.avg(Reading.confidence), 0)).one()
-    sensors_total = db.query(Sensor).count()
-    sensors_active = db.query(Sensor).filter(Sensor.status != "offline").count()
+    return q
+
+
+def _sensors_in_scope(db: Session, f: ReadingFilters) -> list[Sensor]:
+    q = db.query(Sensor)
+    if f.sensor_id:
+        q = q.filter(Sensor.id == f.sensor_id.upper())
+    if f.block:
+        q = q.filter(Sensor.block == f.block)
+    if f.variety_id:
+        q = q.filter(Sensor.variety_id == f.variety_id)
+    return q.all()
+
+
+def _environment_query(db: Session, f: ReadingFilters, start, end):
+    q = db.query(EnvironmentReading).join(Sensor, EnvironmentReading.sensor_id == Sensor.id).filter(EnvironmentReading.measured_at <= end)
+    if start:
+        q = q.filter(EnvironmentReading.measured_at >= start)
+    if f.sensor_id:
+        q = q.filter(EnvironmentReading.sensor_id == f.sensor_id.upper())
+    if f.block:
+        q = q.filter(Sensor.block == f.block)
+    if f.variety_id:
+        q = q.filter(Sensor.variety_id == f.variety_id)
+    return q
+
+
+@router.get("/summary", response_model=SummaryOut, response_model_by_alias=True)
+def summary(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+    """Indicadores do dashboard no período, com comparação ao período anterior de mesma duração."""
+    f = _scoped(filters)
+    start, end = f.bounds()
+    base = f.apply(db)
+    quality = _quality_counts(base)
+    clusters, avg_conf, last = base.order_by(None).with_entities(
+        func.coalesce(func.sum(Reading.clusters_detected), 0), func.avg(Reading.confidence), func.max(Reading.captured_at)
+    ).one()
+
+    previous = None
+    if start:
+        prev = _quality_counts(f.apply(db, period=(start - (end - start), start - timedelta(microseconds=1))))
+        previous = PeriodTotals(readings=prev.total, quality_ratio=round(prev.boa / prev.total, 4) if prev.total else None)
+
+    sensors = status_counts(_sensors_in_scope(db, f))
+    env = _environment_query(db, f, start, end)
+    t_avg, h_avg, n_env, last_env = env.order_by(None).with_entities(
+        func.avg(EnvironmentReading.temperature_c), func.avg(EnvironmentReading.humidity_pct), func.count(EnvironmentReading.id), func.max(EnvironmentReading.measured_at)
+    ).one()
+
     return SummaryOut(
-        days=days, sensors_total=sensors_total, sensors_active=sensors_active, readings=q.total, clusters=int(clusters),
-        quality=q, quality_ratio=round(q.boa / q.total, 4) if q.total else 0.0, avg_confidence=round(float(avg_conf), 4), alerts=q.atencao + q.critica,
+        period_start=start or from_db(db.query(func.min(Reading.captured_at)).scalar()) or end,
+        period_end=end,
+        sensors_total=sum(sensors.values()),
+        sensors_online=sensors["online"],
+        sensors_attention=sensors["atencao"],
+        sensors_offline=sensors["offline"],
+        readings=quality.total,
+        clusters=int(clusters or 0),
+        quality=quality,
+        quality_ratio=round(quality.boa / quality.total, 4) if quality.total else None,
+        avg_confidence=round(float(avg_conf), 4) if avg_conf is not None else None,
+        alerts=quality.atencao + quality.critica,
+        last_reading_at=from_db(last),
+        previous=previous,
+        environment=EnvironmentSummary(
+            avg_temperature_c=round(float(t_avg), 1) if t_avg is not None else None,
+            avg_humidity_pct=round(float(h_avg), 1) if h_avg is not None else None,
+            measurements=int(n_env or 0),
+            last_measured_at=from_db(last_env),
+        ),
     )
 
 
-@router.get("/stats/by-day", response_model=list[DayBucketOut], response_model_by_alias=True)
-def by_day(days: int = Query(default=30, ge=1, le=366), variety_id: str | None = None, sensor_id: str | None = None, db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    """Leituras por dia e classificação (UTC) — base dos gráficos de evolução."""
-    query = db.query(Reading).filter(Reading.captured_at >= _since(days))
-    if variety_id:
-        query = query.filter(Reading.variety_id == variety_id)
-    if sensor_id:
-        query = query.filter(Reading.sensor_id == sensor_id)
-    buckets: dict = {}
-    for r in query.with_entities(Reading.captured_at, Reading.quality, Reading.confidence):
-        day = r.captured_at.date()
-        b = buckets.setdefault(day, {"boa": 0, "atencao": 0, "critica": 0, "conf": 0.0})
-        b[r.quality] += 1
-        b["conf"] += r.confidence
-    out = []
-    for day in sorted(buckets):
-        b = buckets[day]
-        total = b["boa"] + b["atencao"] + b["critica"]
-        out.append(DayBucketOut(day=day, boa=b["boa"], atencao=b["atencao"], critica=b["critica"], total=total, avg_confidence=round(b["conf"] / total, 4)))
-    return out
-
-
-@router.get("/stats/by-variety")
-def by_variety(days: int = Query(default=30, ge=1, le=366), db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    """Histórico por variedade: total, distribuição e confiança média."""
-    rows = (
-        db.query(Reading.variety_id, Reading.quality, func.count(), func.avg(Reading.confidence))
-        .filter(Reading.captured_at >= _since(days))
-        .group_by(Reading.variety_id, Reading.quality)
-        .all()
+def _bucket(key: str, label: str, values: dict) -> BucketOut:
+    total = values["boa"] + values["atencao"] + values["critica"]
+    return BucketOut(
+        key=key, label=label, boa=values["boa"], atencao=values["atencao"], critica=values["critica"], total=total,
+        avg_confidence=round(values["conf"] / total, 4) if total else None,
     )
+
+
+@router.get("/by-day", response_model=list[BucketOut], response_model_by_alias=True)
+def by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+    """Leituras por dia (fuso da propriedade) e qualidade. Dias sem leitura aparecem com zero."""
+    f = _scoped(filters)
+    start, end = f.bounds()
+    buckets: dict = defaultdict(lambda: {"boa": 0, "atencao": 0, "critica": 0, "conf": 0.0})
+    for captured_at, quality, confidence in f.apply(db).order_by(None).with_entities(Reading.captured_at, Reading.quality, Reading.confidence):
+        b = buckets[local_date(captured_at)]
+        b[quality] += 1
+        b["conf"] += confidence
+    if start:
+        first, last = start.astimezone(farm_tz()).date(), end.astimezone(farm_tz()).date()
+        if (last - first).days <= MAX_FILLED_DAYS:
+            day = first
+            while day <= last:
+                buckets[day]  # cria o dia vazio
+                day += timedelta(days=1)
+    return [_bucket(d.isoformat(), d.strftime("%d/%m"), buckets[d]) for d in sorted(buckets)]
+
+
+@router.get("/by-hour", response_model=list[BucketOut], response_model_by_alias=True)
+def by_hour(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+    """Distribuição das leituras por hora do dia (horário local)."""
+    f = _scoped(filters)
+    buckets = {h: {"boa": 0, "atencao": 0, "critica": 0, "conf": 0.0} for h in range(24)}
+    for captured_at, quality, confidence in f.apply(db).order_by(None).with_entities(Reading.captured_at, Reading.quality, Reading.confidence):
+        b = buckets[local_hour(captured_at)]
+        b[quality] += 1
+        b["conf"] += confidence
+    return [_bucket(str(h), f"{h:02d}h", buckets[h]) for h in range(24)]
+
+
+GROUPS = {
+    "sensor": Reading.sensor_id,
+    "variety": Reading.variety_id,
+    "maturation": Reading.maturation,
+    "classification": Reading.classification,
+    "source": Reading.source,
+    "block": Sensor.block,
+}
+
+
+@router.get("/breakdown", response_model=list[GroupOut], response_model_by_alias=True)
+def breakdown(
+    by: Literal["sensor", "variety", "maturation", "classification", "source", "block"] = Query(...),
+    filters: ReadingFilters = Depends(),
+    db: Session = Depends(get_db),
+    _: User | None = Depends(reader),
+):
+    """Totais por sensor, variedade, estágio de maturação, classificação, origem ou bloco."""
+    f = _scoped(filters)
+    column = GROUPS[by]
+    rows = f.apply(db).order_by(None).with_entities(column, Reading.quality, func.count(Reading.id), func.sum(Reading.confidence)).group_by(column, Reading.quality).all()
     out: dict[str, dict] = {}
-    for vid, quality, n, avg in rows:
-        v = out.setdefault(vid, {"varietyId": vid, "total": 0, "boa": 0, "atencao": 0, "critica": 0, "_conf": 0.0})
-        v[quality] = n
-        v["total"] += n
-        v["_conf"] += float(avg) * n
-    for v in out.values():
-        v["avgConfidence"] = round(v.pop("_conf") / v["total"], 4) if v["total"] else 0
-    return sorted(out.values(), key=lambda v: -v["total"])
+    for key, quality, n, conf in rows:
+        g = out.setdefault(key, {"boa": 0, "atencao": 0, "critica": 0, "total": 0, "conf": 0.0})
+        g[quality] += n
+        g["total"] += n
+        g["conf"] += float(conf or 0)
+    return sorted(
+        (GroupOut(key=k, total=g["total"], boa=g["boa"], atencao=g["atencao"], critica=g["critica"], avg_confidence=round(g["conf"] / g["total"], 4) if g["total"] else None) for k, g in out.items()),
+        key=lambda g: (-g.total, g.key),
+    )
 
 
-@router.get("/varieties", response_model=list[VarietyOut], response_model_by_alias=True, tags=["Variedades"])
-def varieties(db: Session = Depends(get_db)):
-    return db.query(Variety).order_by(Variety.name).all()
+@router.get("/environment", response_model=list[EnvironmentDay], response_model_by_alias=True)
+def environment_by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+    """Médias diárias das medições ambientais (temperatura, umidade, luminosidade, umidade do solo)."""
+    f = _scoped(filters)
+    start, end = f.bounds()
+    days: dict = defaultdict(lambda: defaultdict(list))
+    rows = _environment_query(db, f, start, end).with_entities(
+        EnvironmentReading.measured_at, EnvironmentReading.temperature_c, EnvironmentReading.humidity_pct, EnvironmentReading.luminosity_lux, EnvironmentReading.soil_moisture_pct
+    )
+    for at, t, h, lux, soil in rows:
+        d = days[local_date(at)]
+        d["n"].append(1)
+        for name, v in (("t", t), ("h", h), ("lux", lux), ("soil", soil)):
+            if v is not None:
+                d[name].append(v)
+
+    def avg(values, digits=1):
+        return round(sum(values) / len(values), digits) if values else None
+
+    return [
+        EnvironmentDay(
+            key=day.isoformat(), label=day.strftime("%d/%m"), measurements=len(d["n"]),
+            avg_temperature_c=avg(d["t"]), min_temperature_c=min(d["t"]) if d["t"] else None, max_temperature_c=max(d["t"]) if d["t"] else None,
+            avg_humidity_pct=avg(d["h"]), avg_luminosity_lux=avg(d["lux"], 0), avg_soil_moisture_pct=avg(d["soil"]),
+        )
+        for day, d in sorted(days.items())
+    ]
+

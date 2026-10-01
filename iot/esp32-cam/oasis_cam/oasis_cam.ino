@@ -1,11 +1,14 @@
 /*
- * OSAIS — firmware do sensor (ESP32-CAM AI-Thinker / ESP32-S3 + OV5640)
+ * OASIS — firmware do sensor (ESP32-CAM AI-Thinker / ESP32-S3 + OV5640)
  *
  * Fluxo: acorda → conecta ao Wi-Fi → sincroniza o relógio (NTP) → captura JPEG →
  *        envia ao gateway de edge (HTTP multipart ou MQTT) → deep sleep.
  *
  * Placa: "AI Thinker ESP32-CAM" (Arduino-ESP32 ≥ 2.0). Bibliotecas: esp32-camera (inclusa),
- *        PubSubClient (apenas se USE_MQTT = 1).
+ *        PubSubClient (apenas se USE_MQTT = 1), "DHT sensor library" da Adafruit (apenas se DHT_PIN ≥ 0).
+ *
+ * Campos enviados: sensor_id, captured_at, battery, signal, firmware e — com DHT22 —
+ * temperature_c e humidity_pct (gravados como medição ambiental do talhão).
  */
 
 #include "esp_camera.h"
@@ -18,6 +21,32 @@
 WiFiClient mqttNet;
 PubSubClient mqtt(mqttNet);
 #endif
+
+#if DHT_PIN >= 0
+#include <DHT.h>
+DHT dht(DHT_PIN, DHT22);
+#endif
+
+struct Climate {
+  bool ok;
+  float temperature;
+  float humidity;
+};
+
+Climate readClimate() {
+#if DHT_PIN >= 0
+  dht.begin();
+  delay(2000);  // o DHT22 precisa de ~2 s após energizar
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+  if (!isnan(h) && !isnan(t)) return {true, t, h};
+#endif
+  return {false, 0, 0};
+}
+
+String field(const String &boundary, const char *name, const String &value) {
+  return "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"\r\n\r\n" + value + "\r\n";
+}
 
 // Pinagem AI-Thinker ESP32-CAM
 #define PWDN_GPIO_NUM     32
@@ -41,7 +70,7 @@ PubSubClient mqtt(mqttNet);
 RTC_DATA_ATTR uint32_t bootCount = 0;  // sobrevive ao deep sleep
 
 void goToSleep(uint32_t minutes) {
-  Serial.printf("[OSAIS] Dormindo por %u min\n", minutes);
+  Serial.printf("[OASIS] Dormindo por %u min\n", minutes);
   esp_sleep_enable_timer_wakeup((uint64_t)minutes * 60ULL * 1000000ULL);
   esp_deep_sleep_start();
 }
@@ -106,23 +135,26 @@ String isoTimestamp() {
 }
 
 // Envia a imagem como multipart/form-data — mesmo formato aceito por /capture (edge) e /api/v1/ingest (API).
-int postImage(camera_fb_t *fb, int battery, int rssi) {
+int postImage(camera_fb_t *fb, int battery, int rssi, Climate climate) {
   WiFiClient client;
   if (!client.connect(EDGE_HOST, EDGE_PORT)) return -1;
-  const String boundary = "----OSAISBoundary7MA4YWxk";
-  String head;
-  head += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"sensor_id\"\r\n\r\n" + SENSOR_ID + "\r\n";
+  const String boundary = "----OASISBoundary7MA4YWxk";
+  String head = field(boundary, "sensor_id", SENSOR_ID);
   String ts = isoTimestamp();
-  if (ts.length()) head += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"captured_at\"\r\n\r\n" + ts + "\r\n";
-  if (battery >= 0) head += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"battery\"\r\n\r\n" + String(battery) + "\r\n";
-  head += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"signal\"\r\n\r\n" + String(rssi) + "\r\n";
+  if (ts.length()) head += field(boundary, "captured_at", ts);
+  if (battery >= 0) head += field(boundary, "battery", String(battery));
+  head += field(boundary, "signal", String(rssi));
+  head += field(boundary, "firmware", FIRMWARE);
+  if (climate.ok) {
+    head += field(boundary, "temperature_c", String(climate.temperature, 1));
+    head += field(boundary, "humidity_pct", String(climate.humidity, 1));
+  }
   head += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"image\"; filename=\"captura.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
   String tail = "\r\n--" + boundary + "--\r\n";
 
   client.printf("POST %s HTTP/1.1\r\n", EDGE_PATH);
   client.printf("Host: %s\r\n", EDGE_HOST);
   client.printf("X-Device-Token: %s\r\n", DEVICE_TOKEN);
-  client.printf("X-Firmware: %s\r\n", FIRMWARE);
   client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary.c_str());
   client.printf("Content-Length: %u\r\n", head.length() + fb->len + tail.length());
   client.print("Connection: close\r\n\r\n");
@@ -135,17 +167,19 @@ int postImage(camera_fb_t *fb, int battery, int rssi) {
   String status = client.readStringUntil('\n');  // "HTTP/1.1 201 Created"
   client.stop();
   int code = status.length() > 12 ? status.substring(9, 12).toInt() : -2;
-  Serial.printf("[OSAIS] Resposta: %s\n", status.c_str());
+  Serial.printf("[OASIS] Resposta: %s\n", status.c_str());
   return code;
 }
 
 #if USE_MQTT
-bool publishImage(camera_fb_t *fb, int battery, int rssi) {
+bool publishImage(camera_fb_t *fb, int battery, int rssi, Climate climate) {
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setBufferSize(fb->len + 512);
   if (!mqtt.connect(SENSOR_ID, SENSOR_ID, DEVICE_TOKEN)) return false;
-  String base = String("osais/sensores/") + SENSOR_ID;
-  String meta = "{\"battery\":" + String(battery) + ",\"signal\":" + String(rssi) + ",\"capturedAt\":\"" + isoTimestamp() + "\",\"firmware\":\"" + FIRMWARE + "\"}";
+  String base = String("oasis/sensores/") + SENSOR_ID;
+  String meta = "{\"battery\":" + String(battery) + ",\"signal\":" + String(rssi) + ",\"capturedAt\":\"" + isoTimestamp() + "\",\"firmware\":\"" + FIRMWARE + "\"";
+  if (climate.ok) meta += ",\"temperatureC\":" + String(climate.temperature, 1) + ",\"humidityPct\":" + String(climate.humidity, 1);
+  meta += "}";
   mqtt.publish((base + "/meta").c_str(), meta.c_str());
   bool ok = mqtt.publish((base + "/captura").c_str(), fb->buf, fb->len);
   mqtt.disconnect();
@@ -156,21 +190,21 @@ bool publishImage(camera_fb_t *fb, int battery, int rssi) {
 void setup() {
   Serial.begin(115200);
   bootCount++;
-  Serial.printf("\n[OSAIS] %s · boot #%u\n", SENSOR_ID, bootCount);
+  Serial.printf("\n[OASIS] %s · boot #%u\n", SENSOR_ID, bootCount);
 
   if (!connectWiFi()) {
-    Serial.println("[OSAIS] Wi-Fi indisponível");
+    Serial.println("[OASIS] Wi-Fi indisponível");
     goToSleep(10);
   }
   configTime(TZ_OFFSET_SECONDS, 0, "pool.ntp.org", "time.google.com");
   struct tm local;
   if (getLocalTime(&local, 5000) && (local.tm_hour < DAY_START_HOUR || local.tm_hour >= DAY_END_HOUR)) {
-    Serial.println("[OSAIS] Fora do período de luz — aguardando");
+    Serial.println("[OASIS] Fora do período de luz — aguardando");
     goToSleep(CAPTURE_INTERVAL_MIN);
   }
 
   if (!initCamera()) {
-    Serial.println("[OSAIS] Falha ao iniciar a câmera");
+    Serial.println("[OASIS] Falha ao iniciar a câmera");
     goToSleep(5);
   }
   // Descarta os primeiros quadros para estabilizar exposição e balanço de branco.
@@ -189,21 +223,22 @@ void setup() {
   digitalWrite(FLASH_GPIO_NUM, LOW);
 #endif
   if (!fb) {
-    Serial.println("[OSAIS] Captura falhou");
+    Serial.println("[OASIS] Captura falhou");
     goToSleep(5);
   }
-  Serial.printf("[OSAIS] Imagem capturada: %u bytes\n", fb->len);
+  Serial.printf("[OASIS] Imagem capturada: %u bytes\n", fb->len);
 
   int battery = readBattery();
   int rssi = WiFi.RSSI();
+  Climate climate = readClimate();
 #if USE_MQTT
-  bool ok = publishImage(fb, battery, rssi);
+  bool ok = publishImage(fb, battery, rssi, climate);
 #else
-  int code = postImage(fb, battery, rssi);
+  int code = postImage(fb, battery, rssi, climate);
   bool ok = code >= 200 && code < 300;
 #endif
   esp_camera_fb_return(fb);
-  Serial.println(ok ? "[OSAIS] Enviada com sucesso" : "[OSAIS] Falha no envio (o edge fará nova tentativa na próxima captura)");
+  Serial.println(ok ? "[OASIS] Enviada com sucesso" : "[OASIS] Falha no envio (o edge fará nova tentativa na próxima captura)");
   goToSleep(CAPTURE_INTERVAL_MIN);
 }
 

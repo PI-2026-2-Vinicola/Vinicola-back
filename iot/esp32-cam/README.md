@@ -1,4 +1,4 @@
-# Firmware do sensor OSAIS (ESP32 + câmera)
+# Firmware do sensor OASIS (ESP32 + câmera)
 
 Camada **Device** da arquitetura: captura a imagem dos cachos e a envia para a camada **Edge**.
 
@@ -13,9 +13,10 @@ Camada **Device** da arquitetura: captura a imagem dos cachos e a envia para a c
 ## Como gravar
 
 1. Instale o suporte **esp32** na Arduino IDE (Boards Manager → *esp32 by Espressif*).
-2. Copie `osais_cam/config.example.h` para `osais_cam/config.h` e preencha Wi-Fi, destino, `SENSOR_ID` e `DEVICE_TOKEN`.
-3. Selecione a placa **AI Thinker ESP32-CAM** e ative a opção *PSRAM* quando ela existir.
-4. Grave com um adaptador USB-serial (GPIO0 em GND durante o upload).
+2. Cadastre o sensor na OASIS (**Sensores → Novo sensor**, perfil administrador). O token do dispositivo é exibido **uma única vez**; se perdê-lo, use **Gerar novo token**.
+3. Copie `oasis_cam/config.example.h` para `oasis_cam/config.h` e preencha Wi-Fi, destino, `SENSOR_ID` e `DEVICE_TOKEN`. Com um DHT22, informe o pino em `DHT_PIN` e instale a biblioteca *DHT sensor library* (Adafruit).
+4. Selecione a placa **AI Thinker ESP32-CAM** e ative a opção *PSRAM* quando ela existir.
+5. Grave com um adaptador USB-serial (GPIO0 em GND durante o upload).
 
 ## Contrato do envio
 
@@ -28,10 +29,13 @@ sensor_id=S-001
 captured_at=2026-09-23T13:30:00Z   (opcional; vem do NTP)
 battery=87                          (opcional)
 signal=-61                          (RSSI em dBm)
+firmware=v2.0.0
+temperature_c=27.4                  (opcional, DHT22)
+humidity_pct=58.0                   (opcional, DHT22)
 image=@captura.jpg
 ```
 
-No MQTT, a imagem é publicada em `osais/sensores/{id}/captura` (payload binário JPEG) e os metadados em `osais/sensores/{id}/meta` (JSON). O gateway de edge assina esses tópicos.
+No MQTT, a imagem é publicada em `oasis/sensores/{id}/captura` (payload binário JPEG) e os metadados em `oasis/sensores/{id}/meta` (JSON). O gateway de edge assina esses tópicos.
 
 ## Instalação em campo
 

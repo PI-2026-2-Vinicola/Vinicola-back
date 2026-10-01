@@ -4,6 +4,8 @@ QUALITIES = ("boa", "atencao", "critica")
 QUALITY_LABEL = {"boa": "Boa", "atencao": "Atenção", "critica": "Necessita atenção"}
 CLASSIFICATION_BY_QUALITY = {"boa": "APROVADA", "atencao": "EM OBSERVAÇÃO", "critica": "REVISÃO NECESSÁRIA"}
 MATURATIONS = ("desenvolvimento", "pintor", "maturacao", "adequada", "sobrematuracao")
+# Leituras importadas sem estágio informado.
+MATURATION_UNKNOWN = "nao_informada"
 SENSOR_STATUSES = ("online", "atencao", "offline")
 ROLES = ("admin", "gestor", "operador")
 STAGES = ("recebida", "processando", "analisando", "concluida")
@@ -49,3 +51,14 @@ GOOD_OBSERVATIONS = (
 
 # Todas as classes do modelo YOLO, na ordem do dataset (ml/dataset.yaml).
 MODEL_CLASSES = [yolo_class(v) for v in VARIETY_IDS] + list(MILD_ANOMALIES) + list(SEVERE_ANOMALIES)
+
+MATURATION_LABEL = {
+    "desenvolvimento": "Em desenvolvimento",
+    "pintor": "Pintor (véraison)",
+    "maturacao": "Em maturação",
+    "adequada": "Adequada",
+    "sobrematuracao": "Sobrematuração",
+    "nao_informada": "Não informada",
+}
+CLASSIFICATIONS = tuple(CLASSIFICATION_BY_QUALITY.values())
+READING_SOURCES = ("sensor", "upload", "importacao", "demonstracao")

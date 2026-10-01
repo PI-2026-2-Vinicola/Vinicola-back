@@ -1,8 +1,8 @@
-# Dataset YOLO da OSAIS — cachos por variedade + anomalias visuais.
+# Dataset YOLO da OASIS — cachos por variedade + anomalias visuais.
 # Estrutura esperada:
-#   ml/datasets/osais-grapes/images/{train,val,test}/*.jpg
-#   ml/datasets/osais-grapes/labels/{train,val,test}/*.txt   (formato YOLO: classe cx cy w h, normalizados)
-path: datasets/osais-grapes
+#   ml/datasets/oasis-grapes/images/{train,val,test}/*.jpg
+#   ml/datasets/oasis-grapes/labels/{train,val,test}/*.txt   (formato YOLO: classe cx cy w h, normalizados)
+path: datasets/oasis-grapes
 train: images/train
 val: images/val
 test: images/test

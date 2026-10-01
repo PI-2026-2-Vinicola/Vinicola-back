@@ -14,9 +14,11 @@
 #define EDGE_PATH      "/capture"
 
 // ---------- Identidade do sensor ----------
+// Código e token exibidos UMA única vez ao cadastrar o sensor em OASIS → Sensores → Novo sensor
+// (ou em "Gerar novo token"). O token antigo deixa de funcionar quando um novo é gerado.
 #define SENSOR_ID      "S-001"
-#define DEVICE_TOKEN   "osais-dev-s-001"   // token individual do dispositivo (nunca reutilize entre sensores)
-#define FIRMWARE       "v1.4.2"
+#define DEVICE_TOKEN   "COLE_AQUI_O_TOKEN_DO_DISPOSITIVO"
+#define FIRMWARE       "v2.0.0"
 
 // ---------- Captura ----------
 #define CAPTURE_INTERVAL_MIN  90   // intervalo entre capturas (deep sleep)
@@ -29,6 +31,9 @@
 #define BATTERY_ADC_PIN       -1   // -1 = sem medição; ex.: 33 com divisor 100k/100k
 #define BATTERY_VMAX          4.2
 #define BATTERY_VMIN          3.3
+
+// ---------- Temperatura e umidade (DHT22 opcional) ----------
+#define DHT_PIN               -1   // -1 = sem sensor; ex.: 13 (GPIO livre na ESP32-CAM)
 
 // ---------- MQTT (alternativa ao HTTP) ----------
 #define USE_MQTT              0

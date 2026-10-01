@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -11,10 +11,13 @@ from ..models import Detection, Reading, Sensor
 from ..schemas import DetectionOut, ReadingOut
 from .classifier import Analysis
 from .detector import RawDetection
+from .timeutil import as_utc, from_db
+
+API = "/api/v1"
 
 
-def as_utc(dt: datetime) -> datetime:
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+def next_code(reading: Reading) -> str:
+    return f"OA-{reading.id:05d}"
 
 
 def persist_reading(
@@ -26,8 +29,10 @@ def persist_reading(
     captured_at: datetime,
     model_version: str,
     processing_ms: int,
+    source: str,
     image_path: str | None = None,
-    image_seed: int = 0,
+    thumb_path: str | None = None,
+    created_by: int | None = None,
     commit: bool = True,
 ) -> Reading:
     reading = Reading(
@@ -40,32 +45,36 @@ def persist_reading(
         visual_condition=analysis.visual_condition,
         classification=analysis.classification,
         observations=analysis.observations,
-        clusters_detected=max(1, len(analysis.clusters)) if analysis.clusters else 0,
+        clusters_detected=len(analysis.clusters),
         image_path=image_path,
-        image_seed=image_seed,
+        thumb_path=thumb_path,
+        source=source,
         model_version=model_version,
         processing_ms=processing_ms,
         stage="concluida",
+        created_by=created_by,
     )
     for d in detections:
-        kind = "cacho" if variety_from_class(d.label) else "anomalia"
+        kind = "cacho" if (variety_from_class(d.label) or d.label == "cacho") else "anomalia"
         x, y, w, h = d.box
         reading.detections.append(Detection(kind=kind, label=d.label, confidence=d.confidence, x=x, y=y, w=w, h=h))
     db.add(reading)
     db.flush()
-    reading.code = f"OS-{reading.id:05d}"
+    reading.code = next_code(reading)
     if commit:
         db.commit()
     return reading
 
 
 def to_reading_out(r: Reading) -> ReadingOut:
+    code = r.code or next_code(r)
     return ReadingOut(
-        id=r.code or f"OS-{r.id:05d}",
+        id=code,
         sensor_id=r.sensor_id,
+        sensor_name=r.sensor.name,
         block=r.sensor.block,
         location=r.sensor.location,
-        captured_at=as_utc(r.captured_at),
+        captured_at=from_db(r.captured_at),
         variety_id=r.variety_id,
         quality=r.quality,  # type: ignore[arg-type]
         confidence=r.confidence,
@@ -75,8 +84,9 @@ def to_reading_out(r: Reading) -> ReadingOut:
         observations=r.observations,
         detections=[DetectionOut(kind=d.kind, label=d.label, confidence=d.confidence, box=(d.x, d.y, d.w, d.h)) for d in r.detections],  # type: ignore[arg-type]
         clusters_detected=r.clusters_detected,
-        image_seed=r.image_seed,
-        image_url=f"/api/v1/readings/{r.code}/image" if r.image_path else None,
+        image_url=f"{API}/readings/{code}/image" if r.image_path else None,
+        thumb_url=f"{API}/readings/{code}/image?size=thumb" if r.thumb_path else None,
+        source=r.source,
         model_version=r.model_version,
         processing_ms=r.processing_ms,
         stage=r.stage,

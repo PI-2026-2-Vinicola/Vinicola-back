@@ -1,11 +1,15 @@
-"""Modelo relacional da OSAIS (espelha os scripts SQL do repositório Vinicola-bd)."""
+"""Modelo relacional do OASIS (espelha os scripts SQL do repositório Vinicola-bd)."""
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -17,7 +21,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Variety(Base):
@@ -33,25 +39,30 @@ class Variety(Base):
 
 
 class Sensor(Base):
-    __tablename__ = "sensors"
-    __table_args__ = (CheckConstraint("status IN ('online','atencao','offline')", name="ck_sensors_status"),)
+    """
+    Dispositivo de captura. O status (online/atenção/offline) não é gravado: é calculado
+    a partir da última comunicação, da bateria e do sinal (services/sensors.py).
+    """
 
-    id: Mapped[str] = mapped_column(String(10), primary_key=True)
+    __tablename__ = "sensors"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
     block: Mapped[str] = mapped_column(String(40))
     location: Mapped[str] = mapped_column(String(120))
-    latitude: Mapped[float] = mapped_column(Float)
-    longitude: Mapped[float] = mapped_column(Float)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     variety_id: Mapped[str] = mapped_column(ForeignKey("varieties.id"))
-    device: Mapped[str] = mapped_column(String(60))
-    firmware: Mapped[str] = mapped_column(String(20))
-    battery: Mapped[int] = mapped_column(Integer, default=100)
-    signal_dbm: Mapped[int] = mapped_column(Integer, default=-60)
+    device: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    firmware: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    battery: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    signal_dbm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     capture_interval_min: Mapped[int] = mapped_column(Integer, default=90)
-    status: Mapped[str] = mapped_column(String(10), default="online")
-    installed_at: Mapped[date] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    installed_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_communication: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     device_token_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     readings: Mapped[list["Reading"]] = relationship(back_populates="sensor")
 
@@ -61,9 +72,10 @@ class Reading(Base):
     __table_args__ = (
         CheckConstraint("quality IN ('boa','atencao','critica')", name="ck_readings_quality"),
         CheckConstraint("stage IN ('recebida','processando','analisando','concluida')", name="ck_readings_stage"),
+        UniqueConstraint("sensor_id", "captured_at", name="uq_readings_sensor_time"),
         Index("ix_readings_captured_at", "captured_at"),
-        Index("ix_readings_sensor_time", "sensor_id", "captured_at"),
         Index("ix_readings_variety_time", "variety_id", "captured_at"),
+        Index("ix_readings_quality_time", "quality", "captured_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -79,18 +91,20 @@ class Reading(Base):
     observations: Mapped[str] = mapped_column(Text)
     clusters_detected: Mapped[int] = mapped_column(Integer, default=1)
     image_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    image_seed: Mapped[int] = mapped_column(Integer, default=0)
-    model_version: Mapped[str] = mapped_column(String(60))
+    thumb_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="sensor")
+    model_version: Mapped[str] = mapped_column(String(80))
     processing_ms: Mapped[int] = mapped_column(Integer, default=0)
     stage: Mapped[str] = mapped_column(String(12), default="concluida")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     sensor: Mapped[Sensor] = relationship(back_populates="readings")
     detections: Mapped[list["Detection"]] = relationship(back_populates="reading", cascade="all, delete-orphan", order_by="Detection.id")
 
 
 class Detection(Base):
-    """Caixa detectada pelo YOLO (coordenadas normalizadas 0–1: x, y do canto superior esquerdo, largura, altura)."""
+    """Caixa detectada (coordenadas normalizadas 0–1: x, y do canto superior esquerdo, largura, altura)."""
 
     __tablename__ = "detections"
     __table_args__ = (CheckConstraint("kind IN ('cacho','anomalia')", name="ck_detections_kind"),)
@@ -109,13 +123,68 @@ class Detection(Base):
 
 
 class SensorTelemetry(Base):
-    """Histórico de sinais de vida (bateria, sinal) enviados pelos dispositivos."""
+    """Bateria, sinal Wi-Fi e firmware informados pelos dispositivos."""
 
     __tablename__ = "sensor_telemetry"
+    __table_args__ = (Index("ix_sensor_telemetry_sensor_time", "sensor_id", "received_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    sensor_id: Mapped[str] = mapped_column(ForeignKey("sensors.id"), index=True)
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    sensor_id: Mapped[str] = mapped_column(ForeignKey("sensors.id", ondelete="CASCADE"))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     battery: Mapped[int | None] = mapped_column(Integer, nullable=True)
     signal_dbm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     firmware: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class EnvironmentReading(Base):
+    """Medições ambientais do talhão (sensor DHT22/BH1750/umidade do solo ou importação)."""
+
+    __tablename__ = "environment_readings"
+    __table_args__ = (
+        UniqueConstraint("sensor_id", "measured_at", name="uq_environment_sensor_time"),
+        Index("ix_environment_sensor_time", "sensor_id", "measured_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sensor_id: Mapped[str] = mapped_column(ForeignKey("sensors.id", ondelete="CASCADE"))
+    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    luminosity_lux: Mapped[float | None] = mapped_column(Float, nullable=True)
+    soil_moisture_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="sensor")
+
+
+class ImportJob(Base):
+    """Registro de cada importação concluída (resumo e erros por linha)."""
+
+    __tablename__ = "import_jobs"
+    __table_args__ = (CheckConstraint("kind IN ('readings','sensors','environment')", name="ck_import_kind"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    filename: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(20))  # concluida · parcial · sem_alteracoes · falhou
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    inserted: Mapped[int] = mapped_column(Integer, default=0)
+    updated: Mapped[int] = mapped_column(Integer, default=0)
+    duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    invalid: Mapped[int] = mapped_column(Integer, default=0)
+    errors_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuditLog(Base):
+    """Trilha de auditoria: logins, alterações de usuários e sensores, importações."""
+
+    __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    actor: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    action: Mapped[str] = mapped_column(String(60))
+    target: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)

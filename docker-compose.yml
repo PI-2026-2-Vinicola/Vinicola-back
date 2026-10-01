@@ -1,33 +1,31 @@
 # Sobe a API com PostgreSQL. O esquema vem do repositório Vinicola-bd (clonado ao lado deste).
 #   git clone https://github.com/PI-2026-2-Vinicola/Vinicola-bd ../Vinicola-bd
+#   cp .env.example .env   # defina JWT_SECRET, POSTGRES_PASSWORD e OASIS_ADMIN_PASSWORD
 #   docker compose up --build
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: osais
-      POSTGRES_USER: osais
-      POSTGRES_PASSWORD: osais
+      POSTGRES_DB: oasis
+      POSTGRES_USER: oasis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ../Vinicola-bd/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ../Vinicola-bd/postgres/02_views.sql:/docker-entrypoint-initdb.d/02_views.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U osais"]
+      test: ["CMD-SHELL", "pg_isready -U oasis"]
       interval: 5s
       retries: 10
 
   api:
     build: .
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg://osais:osais@db:5432/osais
-      JWT_SECRET: troque-este-segredo-por-um-valor-longo-e-aleatorio
-      OSAIS_DETECTOR: mock
-      SEED_DEMO: "true"
-      PUBLIC_READ: "true"
-      CORS_ORIGINS: http://localhost:5173
+      DATABASE_URL: postgresql+psycopg://oasis:${POSTGRES_PASSWORD}@db:5432/oasis
+      STORAGE_DIR: /srv/storage
     ports:
       - "8000:8000"
     volumes:
@@ -41,7 +39,7 @@ services:
     build: .
     command: ["sh", "-c", "pip install --no-cache-dir httpx && uvicorn edge.gateway:app --host 0.0.0.0 --port 8081"]
     environment:
-      OSAIS_API_URL: http://api:8000
+      OASIS_API_URL: http://api:8000
     volumes:
       - ./edge:/srv/edge
     ports:

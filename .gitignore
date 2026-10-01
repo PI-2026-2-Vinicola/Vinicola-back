@@ -10,5 +10,7 @@ ml/runs/
 ml/datasets/
 .pytest_cache/
 edge/queue/
-iot/esp32-cam/osais_cam/config.h
+iot/esp32-cam/oasis_cam/config.h
 !models/.gitkeep
+*.db-wal
+*.db-shm

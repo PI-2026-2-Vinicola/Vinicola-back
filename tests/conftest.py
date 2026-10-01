@@ -3,17 +3,25 @@ import tempfile
 
 import pytest
 
-# Configura um banco e um diretório de imagens temporários antes de importar a aplicação.
-_tmp = tempfile.mkdtemp(prefix="osais-test-")
+# Banco e diretório de imagens temporários, configurados antes de importar a aplicação.
+_tmp = tempfile.mkdtemp(prefix="oasis-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ["STORAGE_DIR"] = f"{_tmp}/storage"
-os.environ["SEED_DEMO"] = "true"
-os.environ["PUBLIC_READ"] = "true"
-os.environ["OSAIS_DETECTOR"] = "mock"
+os.environ["PUBLIC_READ"] = "false"
+os.environ["OASIS_DETECTOR"] = "color"
+os.environ["OASIS_ADMIN_EMAIL"] = "admin@oasis.agr.br"
+os.environ["OASIS_ADMIN_PASSWORD"] = "Admin2026x"
+os.environ["ENVIRONMENT"] = "development"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app.routers.auth import reset_login_attempts  # noqa: E402
+
+from .images import grape_cluster, jpeg  # noqa: E402,F401
+
+ADMIN = ("admin@oasis.agr.br", "Admin2026x")
+API = "/api/v1"
 
 
 @pytest.fixture(scope="session")
@@ -22,17 +30,42 @@ def client():
         yield c
 
 
-def token_for(client, email: str) -> str:
-    res = client.post("/api/v1/auth/login", json={"email": email, "password": "osais2026"})
+def login(client, email: str, password: str) -> dict:
+    reset_login_attempts()
+    res = client.post(f"{API}/auth/login", json={"email": email, "password": password})
     assert res.status_code == 200, res.text
-    return res.json()["accessToken"]
+    return {"Authorization": f"Bearer {res.json()['accessToken']}"}
 
 
 @pytest.fixture(scope="session")
 def admin_headers(client):
-    return {"Authorization": f"Bearer {token_for(client, 'admin@osais.agr.br')}"}
+    return login(client, *ADMIN)
+
+
+def _user(client, admin_headers, name, email, role):
+    res = client.post(f"{API}/users", json={"name": name, "email": email, "role": role, "password": "Senha2026x"}, headers=admin_headers)
+    assert res.status_code in (201, 409), res.text
+    return login(client, email, "Senha2026x")
 
 
 @pytest.fixture(scope="session")
-def operador_headers(client):
-    return {"Authorization": f"Bearer {token_for(client, 'operador@osais.agr.br')}"}
+def gestor_headers(client, admin_headers):
+    return _user(client, admin_headers, "Gestora Teste", "gestora@teste.com", "gestor")
+
+
+@pytest.fixture(scope="session")
+def operador_headers(client, admin_headers):
+    return _user(client, admin_headers, "Operador Teste", "operador@teste.com", "operador")
+
+
+@pytest.fixture(scope="session")
+def sensor(client, admin_headers):
+    """Sensor real cadastrado pela API; devolve (dados, token do dispositivo)."""
+    body = {
+        "id": "T-001", "name": "Câmera Teste 01", "block": "Bloco Teste", "location": "Fileira 3",
+        "lat": -9.39, "lng": -40.5, "varietyId": "syrah", "device": "ESP32-CAM", "captureIntervalMin": 60,
+    }
+    res = client.post(f"{API}/sensors", json=body, headers=admin_headers)
+    assert res.status_code == 201, res.text
+    data = res.json()
+    return data["sensor"], data["deviceToken"]

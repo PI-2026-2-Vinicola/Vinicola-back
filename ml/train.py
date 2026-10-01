@@ -1,11 +1,11 @@
 """
-Treinamento do modelo YOLO da OSAIS.
+Treinamento do modelo YOLO da OASIS.
 
     pip install -r requirements-ml.txt
     python ml/train.py --epochs 100 --model yolov8n.pt
 
-Ao final, os melhores pesos são copiados para models/osais-grapes.pt.
-Para usá-los na API: OSAIS_DETECTOR=yolo OSAIS_MODEL_PATH=models/osais-grapes.pt
+Ao final, os melhores pesos são copiados para models/oasis-grapes.pt.
+Para usá-los na API: OASIS_DETECTOR=yolo OASIS_MODEL_PATH=models/oasis-grapes.pt
 """
 
 import argparse
@@ -29,7 +29,7 @@ def check_dataset_classes(yaml_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Treina o detector YOLO da OSAIS")
+    parser = argparse.ArgumentParser(description="Treina o detector YOLO da OASIS")
     parser.add_argument("--data", default=str(ROOT / "ml" / "dataset.yaml"))
     parser.add_argument("--model", default="yolov8n.pt", help="pesos iniciais (transfer learning)")
     parser.add_argument("--epochs", type=int, default=100)
@@ -49,7 +49,7 @@ def main() -> None:
         batch=args.batch,
         device=args.device,
         project=str(ROOT / "ml" / "runs"),
-        name="osais-grapes",
+        name="oasis-grapes",
         # Aumentos de dados coerentes com o campo: iluminação, ângulo e escala variam; cor não pode mudar muito
         hsv_h=0.005,
         hsv_s=0.4,
@@ -64,7 +64,7 @@ def main() -> None:
     print(f"mAP50: {metrics.box.map50:.3f} · mAP50-95: {metrics.box.map:.3f}")
 
     best = Path(model.trainer.best)
-    target = ROOT / "models" / "osais-grapes.pt"
+    target = ROOT / "models" / "oasis-grapes.pt"
     target.parent.mkdir(exist_ok=True)
     shutil.copy(best, target)
     print(f"Pesos copiados para {target}")

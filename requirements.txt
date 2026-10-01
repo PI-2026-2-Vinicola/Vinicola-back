@@ -6,7 +6,9 @@ pydantic-settings>=2.3
 python-multipart>=0.0.9
 pyjwt>=2.8
 pillow>=10.3
-tzdata>=2024.1   # fusos horários no Windows (zoneinfo)
+numpy>=1.26          # análise de cor das imagens
+openpyxl>=3.1        # importação de planilhas Excel (.xlsx)
+tzdata>=2024.1       # fusos horários no Windows (zoneinfo)
 # Drivers opcionais (descomente conforme o banco escolhido)
 # psycopg[binary]>=3.1   # PostgreSQL
-# pymysql>=1.1           # MySQL
+# pymysql>=1.1           # MySQL / MariaDB
