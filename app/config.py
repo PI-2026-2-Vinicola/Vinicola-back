@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_JWT_SECRET = "oasis-dev-secret-troque-em-producao-0123456789"
@@ -48,6 +49,12 @@ class Settings(BaseSettings):
 
     # Sensor fica "offline" sem comunicação por N × intervalo de captura.
     sensor_offline_factor: float = 3.0
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _jwt_secret(cls, v: str) -> str:
+        # JWT_SECRET vazio no .env = segredo de desenvolvimento (a produção recusa esse valor).
+        return v.strip() or DEFAULT_JWT_SECRET
 
     @property
     def cors_list(self) -> list[str]:
