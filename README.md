@@ -160,6 +160,8 @@ Colunas opcionais ausentes em leituras importadas recebem valores explícitos, n
 
 Senhas com PBKDF2-SHA256 (240 mil iterações) e política mínima; JWT com expiração; bloqueio de login por e-mail e IP; perfis `admin`, `gestor` e `operador` verificados no servidor; usuário desativado perde o acesso imediatamente; token individual por dispositivo (exibido uma vez, guardado como hash); CORS restrito; cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`; `Cache-Control: no-store` nas respostas da API; consultas parametrizadas (SQLAlchemy) e busca textual com curingas escapados; CSV exportado protegido contra injeção de fórmulas; imagens reprocessadas e sem metadados; erros internos não expõem detalhes; auditoria de logins, alterações e importações.
 
+O diagnóstico de riscos e o plano preliminar de segurança da informação (Projeto Integrador, 1ª AV) estão em [`docs/seguranca/diagnostico-plano-preliminar-1av.md`](docs/seguranca/diagnostico-plano-preliminar-1av.md).
+
 ## Testes
 
 ```bash
