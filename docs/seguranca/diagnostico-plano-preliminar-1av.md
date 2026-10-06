@@ -28,7 +28,7 @@ A OASIS já tem controles sólidos para um protótipo, mas cinco riscos — lide
 | Item | Descrição |
 | --- | --- |
 | Trabalho | Projeto Integrador “Inteligência de Dados no Vale do São Francisco” — Segurança em Sistemas de Informação — 1ª AV |
-| Equipe | PI-2026-2-Vinícola — Antonio Vinicius, Lucas Vinicius, Renan Souza e Vittoria Barbosa |
+| Equipe | PI-2026-2-Vinícola — Antonio Vinicius, Lucas Vinicius, Renan Souza e Vitória Barboza |
 | Objeto | Dashboard Climático e Logístico da vinícola, implementado como plataforma OASIS (Observação Agroambiental Sensorizada, Inteligente e Sustentável) |
 | Fontes | Código e documentação dos repositórios Vinicola-back, Vinicola-Front e Vinicola-bd (versão de 01/10/2026); evidências citadas como `repositório/caminho` |
 | Escopo | O que já está implementado (sensores, edge, API, banco e dashboard) e o que está previsto (módulos logístico, comercial e de clientes, marcados como “previsto”) |
