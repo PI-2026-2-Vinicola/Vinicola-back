@@ -3,22 +3,26 @@ Ingestão de imagens — ponto de entrada do fluxo
 Sensor IoT (ou envio manual) → validação → processamento → detector → classificação → armazenamento.
 """
 
+import asyncio
 import hashlib
 import logging
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
+from ..catalog import ANOMALY_TEXT, MILD_ANOMALIES, MODEL_CLASSES, VARIETIES, variety_from_class
 from ..config import get_settings
 from ..database import get_db
-from ..deps import authorize_device, current_user_optional, device_token_header
+from ..deps import authorize_device, current_user, current_user_optional, device_token_header
 from ..models import EnvironmentReading, Reading, User, Variety
-from ..schemas import ReadingOut
-from ..services.classifier import analyze
-from ..services.detector import get_detector
+from ..schemas import AnalysisModelOut, ModelClassOut, ReadingOut
+from ..services.classifier import ANOMALY_MIN_CONFIDENCE, analyze
+from ..services.detector import YoloDetector, get_detector
 from ..services.readings import persist_reading, to_reading_out
 from ..services.storage import InvalidImage, image_file, load_image, save_image
 from ..services.timeutil import as_utc, utcnow
@@ -26,6 +30,64 @@ from .sensors import apply_device_status, get_sensor_or_404
 
 router = APIRouter(tags=["Ingestão"])
 log = logging.getLogger("oasis.ingest")
+
+ACCEPTED_FORMATS = ["JPEG", "PNG", "WEBP"]
+VARIETY_NAME = {v["id"]: v["name"] for v in VARIETIES}
+
+
+def _class_out(label: str) -> ModelClassOut:
+    variety = variety_from_class(label)
+    if variety:
+        return ModelClassOut(name=label, label=VARIETY_NAME[variety], kind="variedade")
+    return ModelClassOut(name=label, label=ANOMALY_TEXT[label][0], kind="anomalia_leve" if label in MILD_ANOMALIES else "anomalia_grave")
+
+
+@router.get("/analysis/model", response_model=AnalysisModelOut, response_model_by_alias=True)
+def analysis_model(_: User = Depends(current_user)):
+    """Detector efetivamente em uso, classes que ele pode identificar e limites do envio de imagens."""
+    settings = get_settings()
+    detector = get_detector()
+    yolo = isinstance(detector, YoloDetector)
+    weights = Path(settings.oasis_model_path)
+    found = weights.is_file()
+    limitations = []
+    if yolo:
+        limitations += [
+            "As classes e a precisão dependem das imagens anotadas usadas no treinamento (ml/README.md).",
+            f"Detecções com confiança abaixo de {settings.oasis_model_confidence:.2f} são descartadas pelo modelo.",
+        ]
+    else:
+        if not found:
+            weights_note = f"Nenhum modelo YOLO treinado foi encontrado ({weights.name}): a detecção por YOLO é ativada quando os pesos forem adicionados."
+        elif settings.oasis_detector.lower() == "color":
+            weights_note = "O detector está fixado em análise de cor (OASIS_DETECTOR=color), embora exista um arquivo de pesos."
+        else:
+            weights_note = f"O arquivo de pesos {weights.name} existe, mas não pôde ser usado (consulte o log da API)."
+        limitations += [
+            "A análise de cor não reconhece a variedade: usa a variedade cadastrada no talhão do sensor.",
+            "Depende de enquadramento e iluminação; em uvas brancas não distingue bagas verdes da folhagem.",
+            "Foi calibrada com imagens sintéticas e precisa ser ajustada com fotos de campo.",
+            weights_note,
+        ]
+    limitations += [
+        f"Anomalias com confiança abaixo de {ANOMALY_MIN_CONFIDENCE:.1f} não alteram a classificação.",
+        "O resultado é uma análise computacional da imagem, não um diagnóstico fitossanitário, e não substitui a avaliação de um responsável técnico.",
+    ]
+    return AnalysisModelOut(
+        detector=detector.name,
+        version=getattr(detector, "version", detector.name),
+        description=detector.description,
+        yolo_loaded=yolo,
+        yolo_weights_file=weights.name,
+        yolo_weights_found=found,
+        classes=[_class_out(c) for c in getattr(detector, "classes", []) if c in MODEL_CLASSES],
+        confidence_threshold=settings.oasis_model_confidence if yolo else None,
+        anomaly_min_confidence=ANOMALY_MIN_CONFIDENCE,
+        max_upload_mb=settings.max_upload_mb,
+        accepted_formats=ACCEPTED_FORMATS,
+        timeout_seconds=settings.oasis_analysis_timeout_seconds,
+        limitations=limitations,
+    )
 
 
 async def _read_limited(upload: UploadFile, limit_mb: int) -> bytes:
@@ -62,9 +124,10 @@ async def ingest(
     if not sensor.active:
         raise HTTPException(status.HTTP_409_CONFLICT, f"O sensor {sensor.id} está desativado.")
 
-    data = await _read_limited(image, get_settings().max_upload_mb)
+    settings = get_settings()
+    data = await _read_limited(image, settings.max_upload_mb)
     try:
-        img = load_image(data)
+        img = await run_in_threadpool(load_image, data)
     except InvalidImage as exc:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc))
 
@@ -76,17 +139,28 @@ async def ingest(
     if db.query(Reading.id).filter(Reading.sensor_id == sensor.id, Reading.captured_at == at).first():
         raise HTTPException(status.HTTP_409_CONFLICT, f"Já existe uma leitura do sensor {sensor.id} neste horário.")
 
-    variety = db.get(Variety, sensor.variety_id)
+    variety_id = sensor.variety_id
+    variety = db.get(Variety, variety_id)
     variety_type = variety.type if variety else "Tinta"
+    detector = get_detector()
+    seed = int(hashlib.sha1(data).hexdigest()[:8], 16)
+
+    def run_analysis():
+        output = detector.detect(img, variety_id, variety_type)
+        return output, analyze(output.detections, variety_id, variety_type, img, seed=seed)
+
+    # A análise roda fora do event loop (CPU) e tem tempo limite; uma análise lenta não trava as demais requisições.
+    timeout = settings.oasis_analysis_timeout_seconds
     try:
-        output = get_detector().detect(img, sensor.variety_id, variety_type)
+        output, analysis = await asyncio.wait_for(run_in_threadpool(run_analysis), timeout=timeout)
+    except TimeoutError:
+        log.error("Análise da imagem do sensor %s excedeu %.0f s", sensor.id, timeout)
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, f"A análise excedeu o tempo limite de {timeout:.0f} s. Tente novamente; se persistir, envie uma imagem menor.")
     except Exception:
         log.exception("Falha no detector ao processar imagem do sensor %s", sensor.id)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Não foi possível processar a imagem agora. Tente novamente.")
-    seed = int(hashlib.sha1(data).hexdigest()[:8], 16)
-    analysis = analyze(output.detections, sensor.variety_id, variety_type, img, seed=seed)
 
-    path, thumb = save_image(img, at)
+    path, thumb = await run_in_threadpool(save_image, img, at)
     via_device = user is None
     if via_device:
         apply_device_status(db, sensor, battery, signal, firmware, now)

@@ -114,6 +114,8 @@ class ColorDetector:
         "Análise da imagem por segmentação de cor (HSV): localiza o cacho, mede manchas acastanhadas, "
         "mofo acinzentado e bagas fora de cor. A variedade é a cadastrada para o talhão do sensor."
     )
+    # Rótulos que esta análise pode produzir: o cacho (com a variedade do talhão) e três anomalias de cor.
+    classes = [yolo_class(v) for v in VARIETY_IDS] + ["maturacao_desigual", "mancha_leve", "podridao"]
 
     def detect(self, img: Image.Image, variety_hint: str | None, variety_type: str) -> DetectorOutput:
         small = img.copy()
@@ -176,6 +178,43 @@ def _dilate(mask: np.ndarray, steps: int = 3) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------- YOLO
+def model_classes(names: dict | list) -> list[str]:
+    """Classes de um modelo Ultralytics (`model.names` é um dict índice → nome)."""
+    return [str(n) for n in (names.values() if isinstance(names, dict) else names)]
+
+
+def check_model_classes(classes: list[str], model_name: str) -> list[str]:
+    """
+    Garante que o modelo foi treinado para a OASIS. Um modelo genérico (ex.: COCO, com "person", "car"…)
+    não tem nenhuma classe do catálogo e é recusado: suas saídas não podem virar variedade ou anomalia.
+    Devolve as classes desconhecidas (ignoradas na inferência) de um modelo parcialmente compatível.
+    """
+    unknown = [c for c in classes if c not in MODEL_CLASSES]
+    if len(unknown) == len(classes):
+        raise ValueError(f"O modelo {model_name} não contém nenhuma classe da OASIS (ml/dataset.yaml); parece ser um modelo genérico.")
+    if unknown:
+        log.warning("Classes do modelo %s fora do catálogo (serão ignoradas): %s", model_name, sorted(unknown))
+    return unknown
+
+
+def to_raw_detections(boxes_xywhn: list, confidences: list, class_ids: list, names: dict | list) -> tuple[list[RawDetection], list[str]]:
+    """Caixas do Ultralytics (centro x, centro y, largura, altura — normalizados) → formato OASIS (canto superior esquerdo)."""
+    dets: list[RawDetection] = []
+    ignored: list[str] = []
+    for (cx, cy, w, h), conf, cls in zip(boxes_xywhn, confidences, class_ids):
+        label = str(names[int(cls)])  # dict índice → nome (Ultralytics) ou lista
+        if label not in MODEL_CLASSES:
+            ignored.append(label)
+            continue
+        # Recorta a caixa nas bordas da imagem (as restrições do banco exigem coordenadas entre 0 e 1).
+        x0, y0 = max(0.0, cx - w / 2), max(0.0, cy - h / 2)
+        x1, y1 = min(1.0, cx + w / 2), min(1.0, cy + h / 2)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        dets.append(RawDetection(label, round(float(conf), 3), (round(x0, 4), round(y0, 4), round(x1 - x0, 4), round(y1 - y0, 4))))
+    return dets, ignored
+
+
 class YoloDetector:
     name = "yolo"
 
@@ -186,19 +225,14 @@ class YoloDetector:
         self.confidence = confidence
         self.version = f"YOLO · {Path(model_path).name}"
         self.description = f"Modelo YOLO treinado ({Path(model_path).name}) com as classes de variedades e anomalias."
-        unknown = set(self.model.names.values()) - set(MODEL_CLASSES)
-        if unknown:  # pragma: no cover
-            log.warning("Classes do modelo fora do catálogo: %s", sorted(unknown))
+        self.classes = model_classes(self.model.names)
+        self.unknown_classes = check_model_classes(self.classes, Path(model_path).name)
 
     def detect(self, img: Image.Image, variety_hint: str | None, variety_type: str) -> DetectorOutput:  # pragma: no cover - requer modelo
         result = self.model.predict(img, conf=self.confidence, verbose=False)[0]
-        dets: list[RawDetection] = []
-        for xywhn, conf, cls in zip(result.boxes.xywhn.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist()):
-            cx, cy, w, h = xywhn
-            x, y = max(0.0, cx - w / 2), max(0.0, cy - h / 2)
-            w, h = min(w, 1.0 - x), min(h, 1.0 - y)
-            dets.append(RawDetection(self.model.names[int(cls)], round(float(conf), 3), (round(x, 4), round(y, 4), round(w, 4), round(h, 4))))
-        return DetectorOutput(dets, self.version)
+        dets, ignored = to_raw_detections(result.boxes.xywhn.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist(), self.model.names)
+        notes = [f"Detecções de classes fora do catálogo ignoradas: {', '.join(sorted(set(ignored)))}"] if ignored else []
+        return DetectorOutput(dets, self.version, notes)
 
 
 # --------------------------------------------------------------------------- demonstração
@@ -247,4 +281,7 @@ def get_detector() -> Detector:
     return ColorDetector()
 
 
-__all__ = ["ColorDetector", "YoloDetector", "MockDetector", "RawDetection", "DetectorOutput", "get_detector", "VARIETY_IDS"]
+__all__ = [
+    "ColorDetector", "YoloDetector", "MockDetector", "RawDetection", "DetectorOutput", "get_detector", "VARIETY_IDS",
+    "check_model_classes", "to_raw_detections",
+]
