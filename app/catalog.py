@@ -62,3 +62,18 @@ MATURATION_LABEL = {
 }
 CLASSIFICATIONS = tuple(CLASSIFICATION_BY_QUALITY.values())
 READING_SOURCES = ("sensor", "upload", "importacao", "demonstracao")
+
+# Municípios do Submédio do Vale do São Francisco oferecidos na consulta do Zarc (aba Uvas).
+# Códigos conferidos na API de localidades do IBGE (servicodados.ibge.gov.br) em 10/2026.
+# A lista fechada evita que consultas públicas consumam a cota do plano da API Agritec.
+VALE_MUNICIPALITIES = (
+    {"ibge": 2611101, "name": "Petrolina", "uf": "PE"},
+    {"ibge": 2608750, "name": "Lagoa Grande", "uf": "PE"},
+    {"ibge": 2612604, "name": "Santa Maria da Boa Vista", "uf": "PE"},
+    {"ibge": 2609808, "name": "Orocó", "uf": "PE"},
+    {"ibge": 2918407, "name": "Juazeiro", "uf": "BA"},
+    {"ibge": 2907202, "name": "Casa Nova", "uf": "BA"},
+    {"ibge": 2909901, "name": "Curaçá", "uf": "BA"},
+    {"ibge": 2930774, "name": "Sobradinho", "uf": "BA"},
+)
+MUNICIPALITY_BY_IBGE = {m["ibge"]: m for m in VALE_MUNICIPALITIES}

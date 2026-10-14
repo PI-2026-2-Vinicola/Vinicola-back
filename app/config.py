@@ -50,11 +50,64 @@ class Settings(BaseSettings):
     # Sensor fica "offline" sem comunicação por N × intervalo de captura.
     sensor_offline_factor: float = 3.0
 
+    # Tempo máximo da análise de uma imagem (detector + classificação).
+    oasis_analysis_timeout_seconds: float = 30.0
+
+    # ThingSpeak — leitura de canais pela API REST. Canal público: só o ID; canal privado: ID + Read API Key.
+    thingspeak_api_url: str = "https://api.thingspeak.com"
+    thingspeak_channel_id: str = ""
+    thingspeak_read_api_key: str = ""
+    thingspeak_timeout_seconds: float = 10.0
+    # Cache das respostas (mín. 15 s: intervalo mínimo de atualização de um canal no plano gratuito).
+    thingspeak_cache_seconds: int = 15
+    # Intervalo de atualização automática sugerido ao painel (mín. 15 s).
+    thingspeak_refresh_seconds: int = 60
+    # Unidades informadas pelo responsável pelo canal, ex.: "field1=°C,field2=%". Vazio = sem unidade.
+    thingspeak_field_units: str = ""
+
+    # Embrapa AgroAPI (RespondeAgro v1 e Agritec v2) — OAuth2 client credentials da aplicação na loja da AgroAPI.
+    embrapa_api_url: str = "https://api.cnptia.embrapa.br"
+    embrapa_consumer_key: str = ""
+    embrapa_consumer_secret: str = ""
+    embrapa_timeout_seconds: float = 15.0
+    # Cache das buscas do RespondeAgro e dos dados do Agritec (o plano gratuito do Agritec tem 1.000 requisições).
+    embrapa_cache_hours: float = 24.0
+    embrapa_agritec_cache_hours: float = 168.0
+    # Livro da Coleção 500 Perguntas 500 Respostas consultado na aba Uvas.
+    embrapa_book_id: str = "uva"
+    # Consultas públicas à Embrapa por IP e por minuto.
+    embrapa_rate_limit_per_minute: int = 30
+
     @field_validator("jwt_secret")
     @classmethod
     def _jwt_secret(cls, v: str) -> str:
         # JWT_SECRET vazio no .env = segredo de desenvolvimento (a produção recusa esse valor).
         return v.strip() or DEFAULT_JWT_SECRET
+
+    @field_validator("thingspeak_channel_id", "thingspeak_read_api_key", "embrapa_consumer_key", "embrapa_consumer_secret", "embrapa_book_id")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("thingspeak_channel_id")
+    @classmethod
+    def _channel_id(cls, v: str) -> str:
+        if v and not v.isdigit():
+            raise ValueError("THINGSPEAK_CHANNEL_ID deve conter apenas números (ID do canal no ThingSpeak).")
+        return v
+
+    @field_validator("thingspeak_cache_seconds", "thingspeak_refresh_seconds")
+    @classmethod
+    def _min_15s(cls, v: int) -> int:
+        return max(15, v)
+
+    @property
+    def thingspeak_configured(self) -> bool:
+        return bool(self.thingspeak_channel_id)
+
+    @property
+    def embrapa_configured(self) -> bool:
+        return bool(self.embrapa_consumer_key and self.embrapa_consumer_secret)
 
     @property
     def cors_list(self) -> list[str]:

@@ -23,3 +23,13 @@ def test_create_user_command(client):
     main(["create-user", "--name", "Via CLI", "--email", "cli@teste.com", "--role", "operador", "--password", "Senha2026x"])
     res = client.post(f"{API}/auth/login", json={"email": "cli@teste.com", "password": "Senha2026x"})
     assert res.status_code == 200
+
+
+def test_check_integrations_without_configuration(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["check-integrations"])
+    out = capsys.readouterr().out
+    assert exc.value.code == 0  # nada configurado não é falha: o comando apenas orienta
+    assert "THINGSPEAK_CHANNEL_ID" in out and "EMBRAPA_CONSUMER_KEY" in out

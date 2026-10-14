@@ -385,3 +385,160 @@ class SystemStatus(CamelModel):
     public_read: bool
     storage_mb: float
     counts: dict[str, int]
+
+
+# ------------------------------------------------------------------ análise de imagem (modelo em uso)
+class ModelClassOut(CamelModel):
+    name: str  # rótulo do modelo (ex.: syrah, podridao)
+    label: str  # rótulo apresentado ao usuário
+    kind: Literal["variedade", "anomalia_leve", "anomalia_grave"]
+
+
+class AnalysisModelOut(CamelModel):
+    detector: str  # color | yolo
+    version: str
+    description: str
+    yolo_loaded: bool
+    yolo_weights_file: str
+    yolo_weights_found: bool
+    classes: list[ModelClassOut]
+    confidence_threshold: float | None
+    anomaly_min_confidence: float
+    max_upload_mb: int
+    accepted_formats: list[str]
+    timeout_seconds: float
+    limitations: list[str]
+
+
+# ------------------------------------------------------------------ integrações externas
+class ThingSpeakChannelOut(CamelModel):
+    id: int
+    name: str | None
+    description: str | None
+    latitude: float | None
+    longitude: float | None
+    created_at: datetime | None
+    updated_at: datetime | None
+    last_entry_id: int | None
+
+
+class ThingSpeakFieldOut(CamelModel):
+    key: str  # field1 … field8
+    name: str  # nome configurado no canal
+    unit: str | None  # somente se informada em THINGSPEAK_FIELD_UNITS
+    numeric: bool
+    latest: float | None
+    latest_text: str | None
+    latest_at: datetime | None
+    count: int
+    min: float | None
+    max: float | None
+    avg: float | None
+
+
+class ThingSpeakEntryOut(CamelModel):
+    created_at: datetime
+    entry_id: int | None
+    values: dict[str, float | None]
+
+
+class ThingSpeakFeedOut(CamelModel):
+    configured: bool
+    channel_id: str | None
+    period: str
+    aggregation: str | None
+    channel: ThingSpeakChannelOut | None
+    fields: list[ThingSpeakFieldOut]
+    entries: list[ThingSpeakEntryOut]
+    last_entry_at: datetime | None
+    fetched_at: datetime | None
+    refresh_seconds: int
+    stale: bool = False
+    warning: str | None = None
+
+
+class EmbrapaQuestionOut(CamelModel):
+    id: str
+    number: int | None
+    question: str
+    question_html: str  # pergunta com os termos buscados destacados (HTML sanitizado)
+    answer_html: str  # resposta em HTML sanitizado (pode conter imagens em base64)
+    answer_excerpt: str
+    snippet_html: str  # trecho da resposta com os termos buscados destacados (HTML sanitizado)
+    chapter: str | None
+    book: str | None
+    book_id: str | None
+    year: int | None
+    pdf_url: str | None
+    epub_url: str | None
+
+
+class EmbrapaSearchOut(CamelModel):
+    query: str
+    scope: str
+    book_id: str | None
+    total: int
+    total_is_exact: bool
+    page: int
+    page_size: int
+    items: list[EmbrapaQuestionOut]
+    fetched_at: datetime
+    source: str
+
+
+class EmbrapaBookOut(CamelModel):
+    id: str
+    questions: int
+
+
+class AgritecCultureOut(CamelModel):
+    id: int
+    name: str
+    full_name: str | None
+    harvest: str | None
+    cultivation: str | None
+    climate: str | None
+    has_zoning: bool
+
+
+class AgritecWindowOut(CamelModel):
+    cycle: str | None
+    soil: str | None
+    start_day: int
+    start_month: int
+    end_day: int
+    end_month: int
+    risk: int | None
+    harvest_start: int | None
+    harvest_end: int | None
+    ordinance: str | None
+
+
+class AgritecZarcOut(CamelModel):
+    culture: AgritecCultureOut
+    municipality: str
+    ibge_code: int
+    uf: str | None
+    windows: list[AgritecWindowOut]
+    soils: dict[str, str]
+    info: dict[str, str | None]
+    fetched_at: datetime
+    source: str
+
+
+class MunicipalityOut(CamelModel):
+    ibge_code: int
+    name: str
+    uf: str
+
+
+class IntegrationState(CamelModel):
+    configured: bool
+    detail: str
+
+
+class IntegrationsStatus(CamelModel):
+    thingspeak: IntegrationState
+    embrapa: IntegrationState
+    detector: IntegrationState
+    yolo_loaded: bool

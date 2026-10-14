@@ -10,6 +10,12 @@ os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", f"sqlite:///{_t
 os.environ["STORAGE_DIR"] = f"{_tmp}/storage"
 os.environ["PUBLIC_READ"] = "false"
 os.environ["OASIS_DETECTOR"] = "color"
+os.environ["OASIS_MODEL_PATH"] = f"{_tmp}/models/oasis-grapes.pt"  # pesos reais em models/ não afetam a suíte
+# Os testes nunca chamam serviços externos, mesmo que o .env local tenha credenciais reais.
+os.environ["THINGSPEAK_CHANNEL_ID"] = ""
+os.environ["THINGSPEAK_READ_API_KEY"] = ""
+os.environ["EMBRAPA_CONSUMER_KEY"] = ""
+os.environ["EMBRAPA_CONSUMER_SECRET"] = ""
 os.environ["OASIS_ADMIN_EMAIL"] = "admin@oasis.agr.br"
 os.environ["OASIS_ADMIN_PASSWORD"] = "Admin2026x"
 os.environ["ENVIRONMENT"] = "development"

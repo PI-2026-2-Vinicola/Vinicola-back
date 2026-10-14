@@ -13,11 +13,15 @@ from sqlalchemy.exc import IntegrityError
 from . import __version__
 from .config import DEFAULT_JWT_SECRET, get_settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, imports, ingest, readings, sensors, stats, system, users
+from .routers import auth, imports, ingest, integrations, readings, sensors, stats, system, users
 from .seed import bootstrap_admin, seed_catalog
 from .services.detector import get_detector
+from .services.external import ExternalServiceError
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# O httpx registra a URL completa de cada requisição em INFO; a Read API Key do ThingSpeak vai na URL.
+for noisy in ("httpx", "httpcore"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 log = logging.getLogger("oasis")
 settings = get_settings()
 
@@ -39,6 +43,11 @@ async def lifespan(_: FastAPI):
             db.rollback()
     detector = get_detector()
     log.info("OASIS API %s pronta — detector: %s (%s)", __version__, detector.name, getattr(detector, "version", ""))
+    log.info(
+        "Integrações — ThingSpeak: %s · Embrapa AgroAPI: %s",
+        "configurado" if settings.thingspeak_configured else "não configurado",
+        "configurada" if settings.embrapa_configured else "não configurada",
+    )
     yield
 
 
@@ -123,6 +132,12 @@ async def validation_handler(_: Request, exc: RequestValidationError):
     return JSONResponse(status_code=422, content={"detail": errors[0] if errors else "Dados inválidos.", "errors": errors})
 
 
+@app.exception_handler(ExternalServiceError)
+async def external_service_handler(_: Request, exc: ExternalServiceError):
+    """Falhas do ThingSpeak/AgroAPI chegam ao cliente com status próprio e mensagem em português."""
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+
 @app.exception_handler(Exception)
 async def unhandled_handler(request: Request, exc: Exception):
     log.exception("Erro não tratado em %s %s", request.method, request.url.path)
@@ -130,7 +145,7 @@ async def unhandled_handler(request: Request, exc: Exception):
 
 
 API_PREFIX = "/api/v1"
-for r in (auth.router, users.router, sensors.router, readings.router, ingest.router, stats.router, imports.router, system.router):
+for r in (auth.router, users.router, sensors.router, readings.router, ingest.router, stats.router, imports.router, system.router, integrations.router):
     app.include_router(r, prefix=API_PREFIX)
 
 

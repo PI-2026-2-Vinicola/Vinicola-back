@@ -4,6 +4,7 @@ Comandos administrativos da OASIS.
     python -m app.cli create-user --name "Maria" --email maria@empresa.com --role gestor
     python -m app.cli reset-password --email maria@empresa.com
     python -m app.cli check-config
+    python -m app.cli check-integrations         # testa ThingSpeak e Embrapa com chamadas reais
     python -m app.cli seed-demo [--days 30]     # dados SINTÉTICOS marcados como demonstração
     python -m app.cli clear-demo
 """
@@ -33,6 +34,64 @@ def _ask_password(given: str | None) -> str:
         sys.exit(str(exc))
 
 
+def check_integrations() -> int:
+    """
+    Consulta de verdade as integrações configuradas e mostra o que cada serviço devolve
+    (campos do canal do ThingSpeak, livro do RespondeAgro, culturas de uva do Agritec).
+    Usa 1 requisição do Agritec, cuja cota gratuita é de 1.000. Devolve o número de falhas.
+    """
+    from .services.embrapa import EmbrapaService
+    from .services.external import ExternalServiceError
+    from .services.thingspeak import ThingSpeakService
+
+    settings = get_settings()
+    failures = 0
+
+    print("ThingSpeak")
+    if not settings.thingspeak_configured:
+        print("  [--] não configurado: defina THINGSPEAK_CHANNEL_ID (e THINGSPEAK_READ_API_KEY se o canal for privado)")
+    else:
+        try:
+            feed = ThingSpeakService(settings).feed("recent", 10)
+            ch = feed.channel
+            print(f"  [ok] canal {ch.id} - {ch.name or 'sem nome'}; último registro: {feed.last_entry_at or 'nenhum'}")
+            for f in feed.fields:
+                value = f.latest if f.numeric else f.latest_text
+                print(f"       {f.key}: {f.name}{f' [{f.unit}]' if f.unit else ''} - último valor: {value if value is not None else 'sem dados'}")
+            if not feed.fields:
+                print("       nenhum campo nomeado nas configurações do canal")
+        except ExternalServiceError as exc:
+            failures += 1
+            print(f"  [falha] {exc.message}")
+
+    print("Embrapa AgroAPI")
+    if not settings.embrapa_configured:
+        print("  [--] não configurada: defina EMBRAPA_CONSUMER_KEY e EMBRAPA_CONSUMER_SECRET")
+        return failures
+    svc = EmbrapaService(settings)
+    try:
+        books = svc.books()
+        book = next((b for b in books if b.id == settings.embrapa_book_id), None)
+        print(f"  [ok] token obtido; RespondeAgro com {len(books)} livros indexados")
+        if book:
+            print(f"       livro '{book.id}': {book.questions} perguntas")
+        else:
+            failures += 1
+            print(f"  [falha] livro '{settings.embrapa_book_id}' não está entre os indexados (EMBRAPA_BOOK_ID)")
+    except ExternalServiceError as exc:
+        failures += 1
+        print(f"  [falha] RespondeAgro: {exc.message}")
+    try:
+        cultures = svc.grape_cultures()
+        print(f"  [ok] Agritec v2: {len(cultures)} cultura(s) de uva" + ("" if cultures else " - a consulta do Zarc ficará sem dados"))
+        for c in cultures:
+            print(f"       {c.id}: {c.full_name or c.name}{' (com Zarc)' if c.has_zoning else ''}")
+    except ExternalServiceError as exc:
+        failures += 1
+        print(f"  [falha] Agritec: {exc.message}")
+    return failures
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Administração da OASIS")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -45,10 +104,14 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--email", required=True)
     r.add_argument("--password")
     sub.add_parser("check-config", help="Valida as configurações para produção")
+    sub.add_parser("check-integrations", help="Testa as integrações com ThingSpeak e Embrapa (chamadas reais)")
     d = sub.add_parser("seed-demo", help="Gera dados SINTÉTICOS de demonstração (marcados como tal)")
     d.add_argument("--days", type=int, default=30)
     sub.add_parser("clear-demo", help="Remove os dados de demonstração")
     args = parser.parse_args(argv)
+
+    if args.command == "check-integrations":
+        sys.exit(1 if check_integrations() else 0)
 
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
