@@ -59,6 +59,8 @@ OASIS_DETECTOR=yolo OASIS_MODEL_PATH=models/oasis-grapes.pt uvicorn app.main:app
 python ml/predict.py exemplo.jpg --variety syrah   # teste rápido
 ```
 
-O frontend não muda nada: o contrato de `detections` (caixas normalizadas `x, y, largura, altura`) é o mesmo do detector simulado.
+O frontend não muda nada: o contrato de `detections` (caixas normalizadas `x, y, largura, altura`) é o mesmo do detector simulado. A página de envio passa a mostrar “Modelo YOLO treinado” e as classes do modelo (via `GET /api/v1/analysis/model`).
+
+**Modelos genéricos são recusados.** Pesos sem nenhuma classe desta tabela (por exemplo, `yolov8n.pt`/`yolo11n.pt` treinados no COCO, com “person”, “car”…) não são usados: com `OASIS_DETECTOR=auto` a API registra o motivo no log e continua com a análise de cor; com `OASIS_DETECTOR=yolo` ela não inicia. Em um modelo parcialmente compatível, as classes fora do catálogo são descartadas na inferência. Essa proteção e a conversão das caixas foram verificadas com a biblioteca Ultralytics 8.4.
 
 > A classificação é baseada na análise computacional da imagem e não substitui a avaliação agronômica profissional.
