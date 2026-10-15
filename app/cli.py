@@ -60,6 +60,11 @@ def check_integrations() -> int:
                 print(f"       {f.key}: {f.name}{f' [{f.unit}]' if f.unit else ''} - último valor: {value if value is not None else 'sem dados'}")
             if not feed.fields:
                 print("       nenhum campo nomeado nas configurações do canal")
+            pos = feed.position
+            if pos:
+                print(f"       localização ({pos.source}): {pos.latitude}, {pos.longitude}{f' em {pos.at}' if pos.at else ''}")
+            else:
+                print("       localização: nenhuma (envie lat/long em cada registro ou campos Latitude/Longitude)")
         except ExternalServiceError as exc:
             failures += 1
             print(f"  [falha] {exc.message}")

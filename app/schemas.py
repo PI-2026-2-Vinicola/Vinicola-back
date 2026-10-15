@@ -440,6 +440,17 @@ class ThingSpeakEntryOut(CamelModel):
     created_at: datetime
     entry_id: int | None
     values: dict[str, float | None]
+    latitude: float | None = None
+    longitude: float | None = None
+
+
+class ThingSpeakPositionOut(CamelModel):
+    """Última posição válida do dispositivo (parâmetros lat/long do registro, campos Latitude/Longitude ou posição fixa do canal)."""
+
+    latitude: float
+    longitude: float
+    at: datetime | None
+    source: Literal["registro", "campos", "canal"]
 
 
 class ThingSpeakFeedOut(CamelModel):
@@ -453,6 +464,8 @@ class ThingSpeakFeedOut(CamelModel):
     last_entry_at: datetime | None
     fetched_at: datetime | None
     refresh_seconds: int
+    position: ThingSpeakPositionOut | None = None
+    location_fields: list[str] = []  # campos do canal usados como latitude/longitude (fora dos gráficos)
     stale: bool = False
     warning: str | None = None
 
@@ -486,19 +499,6 @@ class EmbrapaSearchOut(CamelModel):
     source: str
 
 
-class EmbrapaBookOut(CamelModel):
-    id: str
-    questions: int
-
-
-class AgritecCultureOut(CamelModel):
-    id: int
-    name: str
-    full_name: str | None
-    harvest: str | None
-    cultivation: str | None
-    climate: str | None
-    has_zoning: bool
 class AnomalyGuidanceOut(CamelModel):
     anomaly: str  # classe do modelo (app.catalog.MODEL_CLASSES)
     label: str
@@ -521,6 +521,19 @@ class ReadingGuidanceOut(CamelModel):
     source: str
 
 
+class EmbrapaBookOut(CamelModel):
+    id: str
+    questions: int
+
+
+class AgritecCultureOut(CamelModel):
+    id: int
+    name: str
+    full_name: str | None
+    harvest: str | None
+    cultivation: str | None
+    climate: str | None
+    has_zoning: bool
 
 
 class AgritecWindowOut(CamelModel):

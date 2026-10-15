@@ -172,3 +172,39 @@ def test_route_when_not_configured(client, operador_headers, thingspeak_override
     thingspeak_override(ok, thingspeak_channel_id="")
     body = client.get(f"{API}/iot/thingspeak", headers=operador_headers).json()
     assert body["configured"] is False and body["channel"] is None
+
+
+# ------------------------------------------------------------------ localização do dispositivo
+def build(channel: dict, feeds: list[dict]):
+    return build_feed({"channel": channel, "feeds": feeds}, channel_id="4242", period="recent", aggregation="", units={}, refresh_seconds=60, fetched_at=datetime.now(timezone.utc))
+
+
+def test_position_from_entry_location_parameters():
+    feeds = [
+        {"created_at": "2026-10-14T10:00:00Z", "entry_id": 1, "field1": "30", "latitude": "-9.40", "longitude": "-40.51"},
+        {"created_at": "2026-10-14T10:01:00Z", "entry_id": 2, "field1": "31", "latitude": "0.0", "longitude": "0.0"},  # 0,0 = sem posição
+        {"created_at": "2026-10-14T10:02:00Z", "entry_id": 3, "field1": "32", "latitude": None, "longitude": None},
+    ]
+    feed = build(CHANNEL, feeds)
+    assert feed.position.source == "registro" and (feed.position.latitude, feed.position.longitude) == (-9.40, -40.51)
+    assert feed.position.at == datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc)
+    assert [e.latitude for e in feed.entries] == [-9.40, None, None] and feed.location_fields == []
+
+
+def test_position_from_latitude_longitude_fields_is_kept_out_of_charts():
+    channel = {**CHANNEL, "field3": "Latitude", "field4": "Longitude"}
+    feeds = [{"created_at": "2026-10-14T10:00:00Z", "entry_id": 1, "field1": "30", "field3": "-9,38", "field4": "-40.49"}]
+    feed = build(channel, feeds)
+    assert [f.key for f in feed.fields] == ["field1", "field2"] and feed.location_fields == ["field3", "field4"]
+    assert feed.position.source == "campos" and feed.position.latitude == -9.38 and "field3" not in feed.entries[0].values
+
+
+def test_position_falls_back_to_channel_and_ignores_zero():
+    assert build(CHANNEL, FEEDS).position.source == "canal"
+    assert build({**CHANNEL, "latitude": "0.0", "longitude": "0.0"}, FEEDS).position is None
+
+
+def test_location_is_requested():
+    svc, calls = make_service(ok)
+    svc.feed()
+    assert calls[0].url.params["location"] == "true"

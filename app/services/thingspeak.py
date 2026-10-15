@@ -7,6 +7,9 @@ Leitura de canais do ThingSpeak pela API REST (https://www.mathworks.com/help/th
   API REST de leitura; por isso a API OASIS não as utiliza.
 - Os nomes dos campos (field1 … field8) vêm do próprio canal. Nenhuma grandeza é presumida e
   a unidade só aparece quando informada em THINGSPEAK_FIELD_UNITS.
+- Localização do dispositivo (ex.: ESP32 com geolocalização por Wi-Fi), em ordem de preferência:
+  parâmetros `lat`/`long` de cada registro (lidos com `location=true`), campos do canal chamados
+  "Latitude" e "Longitude", ou a posição fixa das configurações do canal. 0,0 é tratado como ausente.
 - As respostas ficam em cache por THINGSPEAK_CACHE_SECONDS (mín. 15 s, o intervalo mínimo de
   atualização de um canal no plano gratuito). Se o ThingSpeak falhar, a última resposta válida
   (até 1 h) é devolvida marcada como desatualizada.
@@ -24,7 +27,7 @@ from typing import Any, Literal
 import httpx
 
 from ..config import Settings, get_settings
-from ..schemas import IntegrationState, ThingSpeakChannelOut, ThingSpeakEntryOut, ThingSpeakFeedOut, ThingSpeakFieldOut
+from ..schemas import IntegrationState, ThingSpeakChannelOut, ThingSpeakEntryOut, ThingSpeakFeedOut, ThingSpeakFieldOut, ThingSpeakPositionOut
 from .external import USER_AGENT, ExternalServiceError, KeyedLocks, TTLCache
 
 log = logging.getLogger("oasis.thingspeak")
@@ -41,6 +44,9 @@ PERIODS: dict[str, tuple[dict[str, int], str]] = {
     "7d": ({"days": 7, "timescale": 60}, "Últimos 7 dias · primeiro registro de cada hora"),
     "30d": ({"days": 30, "timescale": 240}, "Últimos 30 dias · primeiro registro de cada janela de 4 h"),
 }
+
+LAT_NAMES = {"latitude", "lat"}
+LNG_NAMES = {"longitude", "long", "lng", "lon"}
 
 _NUMBER = re.compile(r"^[+-]?(\d+([.,]\d*)?|[.,]\d+)([eE][+-]?\d+)?$")
 
@@ -92,6 +98,14 @@ def _int(raw: Any) -> int | None:
         return None
 
 
+def valid_position(lat: float | None, lng: float | None) -> bool:
+    return lat is not None and lng is not None and -90 <= lat <= 90 and -180 <= lng <= 180 and (lat, lng) != (0.0, 0.0)
+
+
+def _geo_field(names: dict[str, str | None], accepted: set[str]) -> str | None:
+    return next((k for k, n in names.items() if n and n.strip().lower() in accepted), None)
+
+
 def build_feed(payload: Any, *, channel_id: str, period: str, aggregation: str, units: dict[str, str], refresh_seconds: int, fetched_at: datetime) -> ThingSpeakFeedOut:
     """Valida e converte a resposta de /channels/{id}/feeds.json."""
     if not isinstance(payload, dict) or not isinstance(payload.get("channel"), dict) or not isinstance(payload.get("feeds"), list):
@@ -109,11 +123,25 @@ def build_feed(payload: Any, *, channel_id: str, period: str, aggregation: str, 
     )
     # Campos configurados no canal = os que têm nome. O nome é a única descrição do significado do campo.
     names = {k: _text(ch.get(k)) for k in FIELD_KEYS}
-    keys = [k for k in FIELD_KEYS if names[k]]
+    lat_key, lng_key = _geo_field(names, LAT_NAMES), _geo_field(names, LNG_NAMES)
+    geo_keys = [lat_key, lng_key] if lat_key and lng_key else []
+    keys = [k for k in FIELD_KEYS if names[k] and k not in geo_keys]
 
     rows = [(at, feed) for feed in payload["feeds"] if isinstance(feed, dict) and (at := parse_time(feed.get("created_at")))]
     rows.sort(key=lambda r: r[0])
-    entries = [ThingSpeakEntryOut(created_at=at, entry_id=_int(feed.get("entry_id")), values={k: parse_number(feed.get(k)) for k in keys}) for at, feed in rows]
+    entries: list[ThingSpeakEntryOut] = []
+    position: ThingSpeakPositionOut | None = None
+    for at, feed in rows:
+        lat, lng, source = parse_number(feed.get("latitude")), parse_number(feed.get("longitude")), "registro"
+        if not valid_position(lat, lng) and geo_keys:
+            lat, lng, source = parse_number(feed.get(geo_keys[0])), parse_number(feed.get(geo_keys[1])), "campos"
+        if not valid_position(lat, lng):
+            lat = lng = None
+        else:
+            position = ThingSpeakPositionOut(latitude=lat, longitude=lng, at=at, source=source)
+        entries.append(ThingSpeakEntryOut(created_at=at, entry_id=_int(feed.get("entry_id")), values={k: parse_number(feed.get(k)) for k in keys}, latitude=lat, longitude=lng))
+    if position is None and valid_position(channel.latitude, channel.longitude):
+        position = ThingSpeakPositionOut(latitude=channel.latitude, longitude=channel.longitude, at=None, source="canal")
 
     fields: list[ThingSpeakFieldOut] = []
     for key in keys:
@@ -154,6 +182,8 @@ def build_feed(payload: Any, *, channel_id: str, period: str, aggregation: str, 
         last_entry_at=entries[-1].created_at if entries else None,
         fetched_at=fetched_at,
         refresh_seconds=refresh_seconds,
+        position=position,
+        location_fields=geo_keys,
     )
 
 
@@ -212,7 +242,7 @@ class ThingSpeakService:
 
     def _fetch(self, query: dict[str, int]) -> Any:
         s = self.settings
-        params: dict[str, Any] = dict(query)
+        params: dict[str, Any] = {**query, "location": "true"}  # inclui latitude/longitude de cada registro
         if s.thingspeak_read_api_key:
             params["api_key"] = s.thingspeak_read_api_key  # a API de leitura só aceita a chave na URL; httpx não registra URLs (main.py)
         url = f"{s.thingspeak_api_url.rstrip('/')}/channels/{s.thingspeak_channel_id}/feeds.json"
