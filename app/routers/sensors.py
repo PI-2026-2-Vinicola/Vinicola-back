@@ -1,11 +1,12 @@
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import authorize_device, client_ip, current_user_optional, device_token_header, reader, require_roles
-from ..models import EnvironmentReading, Sensor, SensorTelemetry, User, Variety
+from ..models import EnvironmentReading, Reading, Sensor, SensorTelemetry, User, Variety
 from ..schemas import EnvironmentIn, EnvironmentPoint, HeartbeatIn, SensorCreateIn, SensorOut, SensorTokenOut, SensorUpdateIn, TelemetryPoint
 from ..security import hash_token, new_device_token
 from ..services.audit import audit
@@ -89,6 +90,28 @@ def regenerate_token(sensor_id: str, request: Request, db: Session = Depends(get
     sensor.device_token_hash = hash_token(token)
     audit(db, "token_sensor_regenerado", actor=admin.email, target=sensor.id, ip=client_ip(request))
     return SensorTokenOut(sensor=to_sensor_out(sensor, sensor_stats(db, [sensor.id])), device_token=token)
+
+
+@router.delete("/{sensor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sensor(sensor_id: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(admin_only)):
+    """
+    Exclui um sensor sem análises. As medições ambientais e a telemetria do dispositivo saem junto
+    (ON DELETE CASCADE no esquema). Um sensor com análises não é excluído, para preservar o histórico:
+    desative-o ou exclua antes as análises.
+    """
+    sensor = get_sensor_or_404(db, sensor_id)
+    analyses = db.query(func.count(Reading.id)).filter(Reading.sensor_id == sensor.id).scalar() or 0
+    if analyses:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"O sensor {sensor.id} tem {analyses} análise(s) no histórico e não pode ser excluído. Desative-o para manter o histórico ou exclua antes as análises.",
+        )
+    environment = db.query(EnvironmentReading).filter(EnvironmentReading.sensor_id == sensor.id).delete(synchronize_session=False)
+    telemetry = db.query(SensorTelemetry).filter(SensorTelemetry.sensor_id == sensor.id).delete(synchronize_session=False)
+    db.delete(sensor)
+    audit(db, "sensor_excluido", actor=admin.email, target=sensor.id,
+          details={"nome": sensor.name, "bloco": sensor.block, "medicoes_ambientais": environment, "telemetria": telemetry}, ip=client_ip(request))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _record_environment(db: Session, sensor: Sensor, at: datetime, values: dict, source: str) -> bool:

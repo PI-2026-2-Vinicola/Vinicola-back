@@ -127,6 +127,7 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | GET · POST · PATCH | `/users` · `/users/{id}` | admin | Usuários: criar, alterar perfil, desativar, redefinir senha |
 | GET | `/sensors` · `/sensors/{id}` | autenticado | Sensores com status calculado, nº de análises e última leitura |
 | POST · PATCH | `/sensors` · `/sensors/{id}` | admin | Cadastro e edição (o token do dispositivo é exibido uma vez) |
+| DELETE | `/sensors/{id}` | admin | Exclui um sensor **sem análises** (medições ambientais e telemetria saem junto); com análises responde 409 e orienta a desativar, para preservar o histórico |
 | POST | `/sensors/{id}/token` | admin | Gera novo token e invalida o anterior |
 | POST | `/sensors/{id}/heartbeat` | dispositivo | Bateria, sinal, firmware, temperatura e umidade |
 | POST · GET | `/sensors/{id}/environment` | dispositivo/usuário · autenticado | Medições ambientais |

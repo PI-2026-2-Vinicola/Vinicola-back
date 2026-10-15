@@ -72,3 +72,35 @@ def test_regenerate_token_invalidates_previous(client, admin_headers):
     new = client.post(f"{API}/sensors/T-003/token", headers=admin_headers).json()["deviceToken"]
     assert client.post(f"{API}/sensors/T-003/heartbeat", json={}, headers={"X-Device-Token": old}).status_code == 401
     assert client.post(f"{API}/sensors/T-003/heartbeat", json={}, headers={"X-Device-Token": new}).status_code == 200
+
+
+def test_delete_sensor_with_environment_and_telemetry(client, admin_headers, operador_headers):
+    res = client.post(f"{API}/sensors", json={"id": "T-DEL", "name": "Para excluir", "block": "B", "location": "L", "varietyId": "syrah", "lat": -9.4, "lng": -40.5}, headers=admin_headers)
+    token = res.json()["deviceToken"]
+    assert client.post(f"{API}/sensors/T-DEL/heartbeat", json={"battery": 80}, headers={"X-Device-Token": token}).status_code == 200
+    assert client.post(f"{API}/sensors/T-DEL/environment", json={"temperatureC": 25}, headers=admin_headers).status_code == 201
+
+    assert client.delete(f"{API}/sensors/T-DEL", headers=operador_headers).status_code == 403
+    assert client.delete(f"{API}/sensors/t-del", headers=admin_headers).status_code == 204  # código sem diferenciar maiúsculas
+    assert client.get(f"{API}/sensors/T-DEL", headers=admin_headers).status_code == 404
+    assert "T-DEL" not in [s["id"] for s in client.get(f"{API}/sensors", headers=admin_headers).json()]
+    assert client.delete(f"{API}/sensors/T-DEL", headers=admin_headers).status_code == 404
+
+
+def test_sensor_with_analyses_is_not_deleted(client, admin_headers):
+    from datetime import datetime, timezone
+
+    from app.database import SessionLocal
+    from app.models import Sensor
+    from app.services.classifier import analyze
+    from app.services.detector import RawDetection
+    from app.services.readings import persist_reading
+
+    client.post(f"{API}/sensors", json={"id": "T-HIST", "name": "Com histórico", "block": "B", "location": "L", "varietyId": "syrah"}, headers=admin_headers)
+    with SessionLocal() as db:
+        detections = [RawDetection("syrah", 0.9, (0.2, 0.2, 0.5, 0.5))]
+        persist_reading(db, sensor=db.get(Sensor, "T-HIST"), analysis=analyze(detections, "syrah"), detections=detections,
+                        captured_at=datetime(2026, 2, 1, tzinfo=timezone.utc), model_version="teste", processing_ms=1, source="upload")
+    res = client.delete(f"{API}/sensors/T-HIST", headers=admin_headers)
+    assert res.status_code == 409 and "1 análise" in res.json()["detail"] and "Desative" in res.json()["detail"]
+    assert client.get(f"{API}/sensors/T-HIST", headers=admin_headers).status_code == 200
