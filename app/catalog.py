@@ -44,12 +44,13 @@ ANOMALY_TEXT = {
 }
 # Termos de busca no livro de uva do RespondeAgro (Embrapa) para cada anomalia detectada.
 # São apenas consultas: o conteúdo exibido vem sempre da API, nunca deste arquivo.
+# Termos conferidos na API real em 10/2026 (todos trazem respostas no livro `uva`).
 ANOMALY_EMBRAPA_QUERY = {
-    "maturacao_desigual": "maturação desuniforme",
-    "baga_irregular": "desavinho",
+    "maturacao_desigual": "coloração das bagas",
+    "baga_irregular": "pegamento do fruto",  # desavinho = falha no pegamento
     "mancha_leve": "manchas nas bagas",
     "podridao": "podridão do cacho",
-    "baga_murcha": "murcha das bagas",
+    "baga_murcha": "bagas murchas",
     "lesao": "doenças fúngicas",
 }
 GOOD_OBSERVATIONS = (
