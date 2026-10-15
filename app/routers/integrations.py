@@ -9,9 +9,11 @@ Integrações externas: ThingSpeak (dados de IoT) e Embrapa AgroAPI (RespondeAgr
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from sqlalchemy.orm import Session
 
 from ..catalog import VALE_MUNICIPALITIES
 from ..config import get_settings
+from ..database import get_db
 from ..deps import client_ip, reader
 from ..models import User
 from ..schemas import (
@@ -23,12 +25,15 @@ from ..schemas import (
     IntegrationsStatus,
     IntegrationState,
     MunicipalityOut,
+    ReadingGuidanceOut,
     ThingSpeakFeedOut,
 )
+from ..services.classifier import ANOMALY_MIN_CONFIDENCE
 from ..services.detector import YoloDetector, get_detector
-from ..services.embrapa import EmbrapaService, get_embrapa
+from ..services.embrapa import EmbrapaService, get_embrapa, strongest_anomalies
 from ..services.external import RateLimiter
 from ..services.thingspeak import ThingSpeakService, get_thingspeak
+from .readings import get_reading_or_404
 
 router = APIRouter(tags=["Integrações"])
 _embrapa_limiter = RateLimiter(get_settings().embrapa_rate_limit_per_minute, 60)
@@ -88,6 +93,14 @@ def embrapa_question(doc_id: str = Path(max_length=48), em: EmbrapaService = Dep
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pergunta não encontrada no RespondeAgro.")
     return item
+
+
+@router.get("/readings/{code}/embrapa", response_model=ReadingGuidanceOut, response_model_by_alias=True, dependencies=limited, tags=["Leituras"])
+def reading_guidance(code: str = Path(max_length=16), db: Session = Depends(get_db), _: User | None = Depends(reader), em: EmbrapaService = Depends(get_embrapa)):
+    """Orientações da Embrapa (RespondeAgro, livro de uva) para as anomalias detectadas na leitura."""
+    reading = get_reading_or_404(db, code)
+    found = [(d.label, d.confidence) for d in reading.detections if d.kind == "anomalia"]
+    return em.guidance(reading.code or code.upper(), reading.model_version, strongest_anomalies(found, ANOMALY_MIN_CONFIDENCE))
 
 
 @router.get("/embrapa/books", response_model=list[EmbrapaBookOut], response_model_by_alias=True, dependencies=limited)

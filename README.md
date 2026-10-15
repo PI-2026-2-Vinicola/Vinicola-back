@@ -151,6 +151,7 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | GET | `/embrapa/questions?q=&page=&pageSize=&scope=grape\|all` | público (limitado por IP) | Busca no RespondeAgro (livro `uva` ou toda a coleção) |
 | GET | `/embrapa/questions/{id}` · `/embrapa/books` | público (limitado por IP) | Pergunta por identificador · livros indexados |
 | GET | `/embrapa/zarc/cultures` · `/embrapa/zarc?cultureId=&ibge=` | público (limitado por IP) | Culturas de uva do Agritec · janelas de plantio do Zarc |
+| GET | `/readings/{id}/embrapa` | leitura (limitado por IP) | Anomalias detectadas na leitura (YOLO ou análise de cor) cruzadas com o livro de uva do RespondeAgro |
 | GET | `/embrapa/municipalities` | público | Municípios do Submédio São Francisco aceitos na consulta do Zarc |
 
 O JSON é em **camelCase**. Erros sempre trazem `detail` em português (validação: `detail` + `errors`). As caixas de detecção seguem o padrão YOLO normalizado (`x, y, largura, altura`, entre 0 e 1).
@@ -206,6 +207,7 @@ A aba **Uvas** consome duas APIs da [AgroAPI](https://www.agroapi.cnptia.embrapa
 - **RespondeAgro v1:** `POST /respondeagro/v1/_search/template` com `query_one_book` (livro `EMBRAPA_BOOK_ID`, padrão `uva`), `query_all` ou `book_ids`, e `GET /respondeagro/v1/_doc/{id}`. A resposta (formato Elasticsearch) traz pergunta, resposta em HTML (com imagens em base64), capítulo, livro, ano e links do livro em PDF/EPUB. O HTML é sanitizado por lista de permissões (`services/sanitize.py`).
 - **Agritec v2:** `GET /agritec/v2/culturas` (culturas com “uva” no nome — nenhum ID é fixado no código), `GET /agritec/v2/zoneamento?idCultura=&codigoIBGE=&risco=todos`, `GET /agritec/v2/culturas/{id}/informacoes-adicionais` e `GET /agritec/v2/solos`. Só municípios do Submédio São Francisco listados em `app/catalog.py` são aceitos.
 - **Limites e cache:** RespondeAgro gratuito até 100 mil requisições/mês; Agritec gratuito por um mês e até 1.000 requisições. Cache de 24 h (RespondeAgro) e 7 dias (Agritec), limite de 30 consultas públicas por minuto por IP e reaproveitamento da última resposta (até 7 dias) se a AgroAPI falhar.
+- **Detecção → Embrapa:** em cada leitura, as anomalias do modelo (confiança ≥ 0,5, uma por classe, graves primeiro) viram buscas no livro de uva (`ANOMALY_EMBRAPA_QUERY` em `app/catalog.py`; 3 respostas por anomalia, com o mesmo cache). Sem anomalias, nenhuma chamada é feita; sem credenciais, nada é exibido no lugar.
 - **Erros tratados:** credenciais recusadas no `/token` (`invalid_client`), acesso negado do gateway (900901/900908), cota (429), indisponibilidade (5xx), tempo esgotado e corpo de erro do Agritec (`error.summary`/`fieldErrors`).
 - **Verificação sem credenciais:** o gateway da AgroAPI confere o caminho antes da autenticação (recurso inexistente → 404; existente → 401), o que permitiu confirmar todos os recursos usados; o fluxo de token foi exercitado contra o `/token` real com credenciais inválidas.
 

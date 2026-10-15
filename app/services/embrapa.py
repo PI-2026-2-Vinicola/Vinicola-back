@@ -37,16 +37,18 @@ from typing import Any, Literal, TypeVar
 
 import httpx
 
-from ..catalog import MUNICIPALITY_BY_IBGE
+from ..catalog import ANOMALY_EMBRAPA_QUERY, ANOMALY_TEXT, MUNICIPALITY_BY_IBGE, SEVERE_ANOMALIES
 from ..config import Settings, get_settings
 from ..schemas import (
     AgritecCultureOut,
     AgritecWindowOut,
     AgritecZarcOut,
+    AnomalyGuidanceOut,
     EmbrapaBookOut,
     EmbrapaQuestionOut,
     EmbrapaSearchOut,
     IntegrationState,
+    ReadingGuidanceOut,
 )
 from .external import USER_AGENT, ExternalServiceError, KeyedLocks, TTLCache
 from .sanitize import excerpt, sanitize_html
@@ -177,6 +179,18 @@ def _agritec_error(res: httpx.Response) -> str | None:
         return None
     fields = [f.get("summary") for f in err.get("fieldErrors") or [] if isinstance(f, dict) and f.get("summary")]
     return _plain(fields[0] if fields else err.get("summary"))
+
+
+GUIDANCE_ITEMS = 3
+
+
+def strongest_anomalies(detections: list[tuple[str, float]], min_confidence: float) -> list[tuple[str, float]]:
+    """Uma entrada por classe de anomalia (maior confiança), graves primeiro; ignora classes sem consulta."""
+    best: dict[str, float] = {}
+    for label, conf in detections:
+        if label in ANOMALY_EMBRAPA_QUERY and conf >= min_confidence and conf > best.get(label, -1):
+            best[label] = conf
+    return sorted(best.items(), key=lambda lc: (lc[0] not in SEVERE_ANOMALIES, -lc[1]))
 
 
 # ------------------------------------------------------------------ serviço
@@ -328,6 +342,27 @@ class EmbrapaService:
             return [EmbrapaBookOut(id=str(b["key"]), questions=_int(b.get("doc_count")) or 0) for b in buckets if isinstance(b, dict) and b.get("key")]
 
         return self._cached("ra:books", 24 * 7, load)
+
+    def guidance(self, reading_id: str, model_version: str, anomalies: list[tuple[str, float]]) -> ReadingGuidanceOut:
+        """
+        Cruza as anomalias detectadas pelo modelo (YOLO ou análise de cor) com o livro de uva do
+        RespondeAgro. Sem anomalias, nenhuma consulta é feita; sem credenciais, nada é inventado.
+        """
+        base = {"reading_id": reading_id, "model_version": model_version, "source": SOURCE_RESPONDE}
+        if not anomalies:
+            return ReadingGuidanceOut(**base, configured=self.configured, anomalies=[], detail="Nenhuma anomalia detectada nesta leitura.")
+        if not self.configured:
+            return ReadingGuidanceOut(**base, configured=False, anomalies=[], detail=self.status().detail)
+        out, fetched = [], None
+        for label, conf in anomalies:
+            query = ANOMALY_EMBRAPA_QUERY[label]
+            found = self.search(query, 1, GUIDANCE_ITEMS, "grape")
+            fetched = max(fetched, found.fetched_at) if fetched else found.fetched_at
+            out.append(AnomalyGuidanceOut(
+                anomaly=label, label=ANOMALY_TEXT[label][0], confidence=round(conf, 3), severe=label in SEVERE_ANOMALIES,
+                query=query, total=found.total, items=found.items,
+            ))
+        return ReadingGuidanceOut(**base, configured=True, anomalies=out, fetched_at=fetched)
 
     # ---------------------------------------------------------------- Agritec
     def grape_cultures(self) -> list[AgritecCultureOut]:

@@ -42,6 +42,16 @@ ANOMALY_TEXT = {
     "baga_murcha": ("Bagas desidratadas", "Bagas murchas/desidratadas em região do cacho. Verificar irrigação e exposição solar."),
     "lesao": ("Lesões visíveis", "Manchas escuras e rachaduras em várias bagas — possível doença fúngica ou dano mecânico. Avaliação agronômica recomendada."),
 }
+# Termos de busca no livro de uva do RespondeAgro (Embrapa) para cada anomalia detectada.
+# São apenas consultas: o conteúdo exibido vem sempre da API, nunca deste arquivo.
+ANOMALY_EMBRAPA_QUERY = {
+    "maturacao_desigual": "maturação desuniforme",
+    "baga_irregular": "desavinho",
+    "mancha_leve": "manchas nas bagas",
+    "podridao": "podridão do cacho",
+    "baga_murcha": "murcha das bagas",
+    "lesao": "doenças fúngicas",
+}
 GOOD_OBSERVATIONS = (
     "Cacho uniforme, coloração compatível com a variedade e sem sinais visuais de dano.",
     "Bagas íntegras e maturação homogênea no cacho.",

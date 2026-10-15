@@ -499,6 +499,28 @@ class AgritecCultureOut(CamelModel):
     cultivation: str | None
     climate: str | None
     has_zoning: bool
+class AnomalyGuidanceOut(CamelModel):
+    anomaly: str  # classe do modelo (app.catalog.MODEL_CLASSES)
+    label: str
+    confidence: float
+    severe: bool
+    query: str  # termo consultado no RespondeAgro
+    total: int
+    items: list[EmbrapaQuestionOut]
+
+
+class ReadingGuidanceOut(CamelModel):
+    """Detecções de anomalia de uma leitura cruzadas com o conteúdo da Embrapa (RespondeAgro)."""
+
+    reading_id: str
+    model_version: str
+    configured: bool
+    detail: str | None = None
+    anomalies: list[AnomalyGuidanceOut]
+    fetched_at: datetime | None = None
+    source: str
+
+
 
 
 class AgritecWindowOut(CamelModel):
