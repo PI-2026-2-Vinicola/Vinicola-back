@@ -11,6 +11,7 @@ ml/datasets/
 .pytest_cache/
 edge/queue/
 iot/esp32-cam/oasis_cam/config.h
+iot/esp32-thingspeak/oasis_thingspeak/config.h
 !models/.gitkeep
 *.db-wal
 *.db-shm
