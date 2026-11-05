@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from .conftest import API
 from .images import grape_cluster, jpeg
 
@@ -43,7 +45,15 @@ def test_by_hour_and_breakdown(client, admin_headers):
 
 
 def test_public_overview_has_only_aggregates(client, admin_headers):
+    # A página pública conta os últimos 30 dias a partir de hoje: as leituras deste
+    # cenário são relativas ao momento da execução, para o teste não vencer com o calendário.
     _seed(client, admin_headers)
+    token = client.post(f"{API}/sensors/ST-01/token", headers=admin_headers).json()["deviceToken"]
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    for hours in (1, 2, 3):
+        at = (now - timedelta(hours=hours)).isoformat()
+        res = client.post(f"{API}/ingest", data={"sensor_id": "ST-01", "captured_at": at}, files={"image": ("c.jpg", jpeg(grape_cluster()), "image/jpeg")}, headers={"X-Device-Token": token})
+        assert res.status_code == 201
     o = client.get(f"{API}/public/overview").json()
     assert o["sensorsTotal"] >= 1 and o["analyses30d"] >= 3 and o["varietiesMonitored"] >= 1
     assert "lat" not in str(o)
