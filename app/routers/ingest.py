@@ -65,6 +65,11 @@ def _card_out(detector: OnnxYoloDetector) -> ModelCardOut:
     )
 
 
+def _br(value: float, digits: int = 2) -> str:
+    """Número com vírgula decimal, como no restante da interface."""
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
 COLOR_FALLBACK_LIMITS = [
     "A análise de cor não reconhece a variedade: usa a variedade cadastrada no talhão do sensor.",
     "Avaliada com fotos reais de campo (Embrapa WGISD), a caixa encontrada pela análise de cor não coincidiu com os cachos "
@@ -101,7 +106,7 @@ def analysis_model(_: User = Depends(current_user)):
     elif yolo:
         limitations += [
             "As classes e a precisão dependem das imagens anotadas usadas no treinamento (ml/README.md).",
-            f"Detecções com confiança abaixo de {detector.confidence:.2f} são descartadas pelo modelo.",
+            f"Detecções com confiança abaixo de {_br(detector.confidence)} são descartadas pelo modelo.",
         ]
         components = [AnalysisComponentOut(item="Cachos, variedade e anomalias", source="Modelo YOLO treinado", kind="modelo")]
         classes = [_class_out(c) for c in getattr(detector, "classes", []) if c in MODEL_CLASSES]
@@ -123,7 +128,7 @@ def analysis_model(_: User = Depends(current_user)):
         ]
         classes = [_class_out(c, "analise_cor") for c in ColorDetector.classes if c in MODEL_CLASSES]
     limitations += [
-        f"Anomalias com confiança abaixo de {ANOMALY_MIN_CONFIDENCE:.1f} não alteram a classificação.",
+        f"Anomalias com confiança abaixo de {_br(ANOMALY_MIN_CONFIDENCE, 1)} não alteram a classificação.",
         "O resultado é uma previsão computacional a partir da imagem, não um diagnóstico fitossanitário, e não substitui a avaliação de um responsável técnico.",
     ]
     return AnalysisModelOut(

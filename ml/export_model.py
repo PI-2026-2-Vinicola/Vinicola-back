@@ -139,7 +139,7 @@ def main() -> None:
     color = None
     if calibration:
         t = calibration["limiares_calibrados"]
-        color = {"brown_mild": round(t["brown_mild"], 2), "brown_severe": round(t["brown_severe"], 2), "mold": t["mold"], "off_color": t["off_color"],
+        color = {"brown_mild": t["brown_mild"], "brown_severe": t["brown_severe"], "mold": t["mold"], "off_color": t["off_color"],
                  "target_rate": calibration["meta_de_disparo"], "report": "ml/reports/calibracao_cor.json"}
 
     classes = [pt_model.names[i] for i in sorted(pt_model.names)]
@@ -229,7 +229,7 @@ def main() -> None:
         "Localiza cachos de uva. Não identifica a variedade nem diagnostica doenças, qualidade ou maturação — esses itens vêm do cadastro do talhão e da análise de cor, que é uma regra, não um modelo treinado.",
         "Ainda não foi avaliado com fotos do Vale do São Francisco nem das câmeras ESP32-CAM da OASIS; o desempenho pode cair até que imagens locais sejam anotadas e incluídas no treino.",
         "Treinado do zero (sem pesos pré-treinados)." if not card["pretrained"] else "Treinado por transfer learning a partir de pesos pré-treinados do Ultralytics.",
-        f"Detecções com confiança abaixo de {threshold:.2f} são descartadas (limiar de maior F1 na validação).",
+        f"Detecções com confiança abaixo de {threshold:.2f} são descartadas (limiar de maior F1 na validação).".replace(".", ",", 1),
         "Uso não comercial: os pesos derivam do WGISD (CC BY-NC 4.0); citar a Embrapa e os autores do dataset.",
     ]
     ModelCard.model_validate(card)  # a ficha publicada precisa ser válida para a API
