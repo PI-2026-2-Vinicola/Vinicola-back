@@ -407,7 +407,7 @@ class OnnxYoloDetector:
         anomalies: list[RawDetection] = []
         for c in clusters[:MAX_CLUSTERS_ANALYZED]:
             anomalies += region_anomalies(img, c.box, variety_type, self.thresholds)
-        notes = [f"{len(clusters)} cacho(s) localizado(s) pelo modelo com confiança ≥ {self.confidence:.2f}."]
+        notes = [f"{len(clusters)} cacho(s) localizado(s) pelo modelo com confiança ≥ " + f"{self.confidence:.2f}.".replace(".", ",", 1)]
         if len(clusters) > MAX_CLUSTERS_ANALYZED:
             notes.append(f"Análise de cor feita nos {MAX_CLUSTERS_ANALYZED} cachos de maior confiança.")
         return DetectorOutput(clusters + anomalies, self.version, notes)
