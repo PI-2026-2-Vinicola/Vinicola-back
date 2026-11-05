@@ -1,0 +1,622 @@
+{
+  "modelo": "OASIS Variedades 1.0.0",
+  "classes": [
+    "cabernet_franc",
+    "cabernet_sauvignon",
+    "chardonnay",
+    "sauvignon_blanc",
+    "syrah"
+  ],
+  "validacao": {
+    "accuracy": 0.9346,
+    "balanced_accuracy": 0.9337,
+    "per_class": {
+      "cabernet_franc": {
+        "precision": 0.9455,
+        "recall": 0.963,
+        "f1": 0.9541,
+        "support": 108
+      },
+      "cabernet_sauvignon": {
+        "precision": 0.9714,
+        "recall": 0.8293,
+        "f1": 0.8947,
+        "support": 82
+      },
+      "chardonnay": {
+        "precision": 0.9159,
+        "recall": 0.9515,
+        "f1": 0.9333,
+        "support": 103
+      },
+      "sauvignon_blanc": {
+        "precision": 0.8958,
+        "recall": 0.9416,
+        "f1": 0.9181,
+        "support": 137
+      },
+      "syrah": {
+        "precision": 1.0,
+        "recall": 0.9831,
+        "f1": 0.9915,
+        "support": 59
+      }
+    },
+    "split": "val",
+    "samples": 489,
+    "images": 37,
+    "confusion_matrix": [
+      [
+        104,
+        2,
+        1,
+        1,
+        0
+      ],
+      [
+        6,
+        68,
+        0,
+        8,
+        0
+      ],
+      [
+        0,
+        0,
+        98,
+        5,
+        0
+      ],
+      [
+        0,
+        0,
+        8,
+        129,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        58
+      ]
+    ],
+    "accuracy_by_camera": {
+      "Canon EOS REBEL T3i": {
+        "accuracy": 0.9323,
+        "samples": 384
+      },
+      "motorola Moto Z2 Play": {
+        "accuracy": 0.9429,
+        "samples": 105
+      }
+    }
+  },
+  "teste": {
+    "accuracy": 0.9368,
+    "balanced_accuracy": 0.9392,
+    "per_class": {
+      "cabernet_franc": {
+        "precision": 0.9487,
+        "recall": 0.9548,
+        "f1": 0.9518,
+        "support": 155
+      },
+      "cabernet_sauvignon": {
+        "precision": 0.8548,
+        "recall": 0.9636,
+        "f1": 0.906,
+        "support": 110
+      },
+      "chardonnay": {
+        "precision": 0.9259,
+        "recall": 0.8876,
+        "f1": 0.9063,
+        "support": 169
+      },
+      "sauvignon_blanc": {
+        "precision": 0.9526,
+        "recall": 0.9414,
+        "f1": 0.947,
+        "support": 256
+      },
+      "syrah": {
+        "precision": 0.9911,
+        "recall": 0.9487,
+        "f1": 0.9694,
+        "support": 117
+      }
+    },
+    "split": "test",
+    "samples": 807,
+    "images": 58,
+    "confusion_matrix": [
+      [
+        148,
+        3,
+        0,
+        4,
+        0
+      ],
+      [
+        2,
+        106,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        14,
+        150,
+        5,
+        0
+      ],
+      [
+        2,
+        1,
+        11,
+        241,
+        1
+      ],
+      [
+        4,
+        0,
+        0,
+        2,
+        111
+      ]
+    ],
+    "accuracy_by_camera": {
+      "Canon EOS REBEL T3i": {
+        "accuracy": 0.931,
+        "samples": 681
+      },
+      "motorola Moto Z2 Play": {
+        "accuracy": 0.9683,
+        "samples": 126
+      }
+    }
+  },
+  "por_foto_teste": {
+    "photos": 58,
+    "accuracy": 0.9828,
+    "by_variety": {
+      "cabernet_franc": {
+        "accuracy": 1.0,
+        "photos": 10
+      },
+      "cabernet_sauvignon": {
+        "accuracy": 1.0,
+        "photos": 9
+      },
+      "chardonnay": {
+        "accuracy": 0.9333,
+        "photos": 15
+      },
+      "sauvignon_blanc": {
+        "accuracy": 1.0,
+        "photos": 14
+      },
+      "syrah": {
+        "accuracy": 1.0,
+        "photos": 10
+      }
+    },
+    "without_prediction": 0,
+    "details": [
+      {
+        "foto": "CDY_2015",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.762,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_20180427_152724818_BURST000_COVER_TOP",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.707,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_20180427_153615626_BURST000_COVER_TOP",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.774,
+        "cachos_votantes": 4
+      },
+      {
+        "foto": "CDY_2023",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.861,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2033",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.993,
+        "cachos_votantes": 6
+      },
+      {
+        "foto": "CDY_2038",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 1.0,
+        "cachos_votantes": 7
+      },
+      {
+        "foto": "CDY_2039",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.999,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2040",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.999,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2041",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.999,
+        "cachos_votantes": 5
+      },
+      {
+        "foto": "CDY_2043",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.996,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2046",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.784,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2051",
+        "verdadeira": "chardonnay",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 0.602,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2054",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.86,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2059",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.987,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CDY_2060",
+        "verdadeira": "chardonnay",
+        "prevista": "chardonnay",
+        "confianca": 0.913,
+        "cachos_votantes": 5
+      },
+      {
+        "foto": "CFR_1621",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.925,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1638",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.96,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1639",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.965,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1641",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.996,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1643",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1651",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.999,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1658",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1666",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.952,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_1667",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 0.998,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CFR_20180427_141134599",
+        "verdadeira": "cabernet_franc",
+        "prevista": "cabernet_franc",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_1877",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_1880",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_1898",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 0.997,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_1905",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 0.999,
+        "cachos_votantes": 6
+      },
+      {
+        "foto": "CSV_1906",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 0.751,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_20180427_144507419",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_20180427_144535647",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "CSV_20180427_144723166_HDR",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 0.723,
+        "cachos_votantes": 7
+      },
+      {
+        "foto": "CSV_20180427_144732784_HDR",
+        "verdadeira": "cabernet_sauvignon",
+        "prevista": "cabernet_sauvignon",
+        "confianca": 0.997,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1929",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.99,
+        "cachos_votantes": 7
+      },
+      {
+        "foto": "SVB_1935",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.989,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1936",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.851,
+        "cachos_votantes": 7
+      },
+      {
+        "foto": "SVB_1942",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.902,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1944",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.993,
+        "cachos_votantes": 6
+      },
+      {
+        "foto": "SVB_1954",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.93,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1956",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.934,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1959",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.937,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1961",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.867,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1962",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.905,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1970",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.9,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_1972",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.76,
+        "cachos_votantes": 6
+      },
+      {
+        "foto": "SVB_20180427_151818928",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.997,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SVB_20180427_152010406_HDR",
+        "verdadeira": "sauvignon_blanc",
+        "prevista": "sauvignon_blanc",
+        "confianca": 0.996,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1239",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 0.999,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1255",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 0.918,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1269",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1285",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1297",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 1.0,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1304",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 1.0,
+        "cachos_votantes": 4
+      },
+      {
+        "foto": "SYH_2017-04-27_1318",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 1.0,
+        "cachos_votantes": 7
+      },
+      {
+        "foto": "SYH_2017-04-27_1320",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 0.949,
+        "cachos_votantes": 6
+      },
+      {
+        "foto": "SYH_2017-04-27_1322",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 0.998,
+        "cachos_votantes": 8
+      },
+      {
+        "foto": "SYH_2017-04-27_1333",
+        "verdadeira": "syrah",
+        "prevista": "syrah",
+        "confianca": 0.996,
+        "cachos_votantes": 8
+      }
+    ]
+  },
+  "ultralytics_teste": {
+    "top1": 0.9368,
+    "top5": 1.0
+  },
+  "melhor_epoca": 29
+}

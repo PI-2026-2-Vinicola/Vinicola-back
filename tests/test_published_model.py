@@ -66,3 +66,22 @@ def test_auto_mode_loads_the_published_model(monkeypatch):
     monkeypatch.setattr(detector_module, "get_settings", lambda: settings)
     detector = detector_module.get_detector.__wrapped__()
     assert isinstance(detector, OnnxYoloDetector) and detector.path == BUNDLED_MODEL
+
+
+VARIETY_MODEL = BUNDLED_MODEL.with_name("oasis-variedades.onnx")
+
+
+@pytest.mark.skipif(not VARIETY_MODEL.exists(), reason="classificador de variedades ainda não publicado em models/")
+def test_published_variety_classifier_recognizes_the_syrah_test_photo(published):
+    from PIL import Image
+
+    from app.services.detector import OnnxVarietyClassifier
+
+    clf = OnnxVarietyClassifier(VARIETY_MODEL)  # confere o SHA-256 com a ficha
+    assert clf.card.task == "classificacao_variedade" and set(clf.classes) == {"cabernet_franc", "cabernet_sauvignon", "chardonnay", "sauvignon_blanc", "syrah"}
+    test = clf.card.metrics["test"]
+    assert test.photo_accuracy is not None and test.accuracy > 0.5
+    img = Image.open(FIXTURE).convert("RGB")
+    clusters = published.predict(img)
+    pred = clf.predict(img, clusters)
+    assert pred is not None and pred.label == "syrah" and pred.clusters >= 3

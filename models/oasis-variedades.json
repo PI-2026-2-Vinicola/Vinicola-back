@@ -1,0 +1,164 @@
+{
+  "name": "OASIS Variedades",
+  "version": "1.0.0",
+  "task": "classificacao_variedade",
+  "architecture": "YOLO26n-cls",
+  "pretrained": true,
+  "framework": "Ultralytics 8.4.202 · PyTorch 2.15.0 → ONNX (opset 17) · ONNX Runtime 1.31.1",
+  "input_size": 224,
+  "classes": [
+    "cabernet_franc",
+    "cabernet_sauvignon",
+    "chardonnay",
+    "sauvignon_blanc",
+    "syrah"
+  ],
+  "confidence_threshold": 0.5,
+  "iou_threshold": 0.0,
+  "trained_at": "2026-11-05T20:15:01+00:00",
+  "training": {
+    "pesos_iniciais": "ml/pesos/yolo26n-cls.pt (ImageNet, release oficial da Ultralytics)",
+    "epocas_solicitadas": 60,
+    "epocas_executadas": 44,
+    "melhor_epoca": 29,
+    "imgsz": 224,
+    "batch": 64,
+    "otimizador": "auto",
+    "paciencia": 15,
+    "aumentos": {
+      "hsv_h": 0.005,
+      "hsv_s": 0.2,
+      "hsv_v": 0.3,
+      "fliplr": 0.5,
+      "flipud": 0.0,
+      "degrees": 10.0,
+      "scale": 0.3,
+      "erasing": 0.2
+    },
+    "metricas_ultralytics_teste": {
+      "top1": 0.9368,
+      "top5": 1.0
+    }
+  },
+  "metrics": {
+    "val": {
+      "split": "validação",
+      "images": 37,
+      "samples": 489,
+      "accuracy": 0.9346,
+      "balanced_accuracy": 0.9337,
+      "per_class": {
+        "cabernet_franc": {
+          "precision": 0.9455,
+          "recall": 0.963,
+          "f1": 0.9541,
+          "support": 108
+        },
+        "cabernet_sauvignon": {
+          "precision": 0.9714,
+          "recall": 0.8293,
+          "f1": 0.8947,
+          "support": 82
+        },
+        "chardonnay": {
+          "precision": 0.9159,
+          "recall": 0.9515,
+          "f1": 0.9333,
+          "support": 103
+        },
+        "sauvignon_blanc": {
+          "precision": 0.8958,
+          "recall": 0.9416,
+          "f1": 0.9181,
+          "support": 137
+        },
+        "syrah": {
+          "precision": 1.0,
+          "recall": 0.9831,
+          "f1": 0.9915,
+          "support": 59
+        }
+      },
+      "photo_accuracy": null
+    },
+    "test": {
+      "split": "teste",
+      "images": 58,
+      "samples": 807,
+      "accuracy": 0.9368,
+      "balanced_accuracy": 0.9392,
+      "per_class": {
+        "cabernet_franc": {
+          "precision": 0.9487,
+          "recall": 0.9548,
+          "f1": 0.9518,
+          "support": 155
+        },
+        "cabernet_sauvignon": {
+          "precision": 0.8548,
+          "recall": 0.9636,
+          "f1": 0.906,
+          "support": 110
+        },
+        "chardonnay": {
+          "precision": 0.9259,
+          "recall": 0.8876,
+          "f1": 0.9063,
+          "support": 169
+        },
+        "sauvignon_blanc": {
+          "precision": 0.9526,
+          "recall": 0.9414,
+          "f1": 0.947,
+          "support": 256
+        },
+        "syrah": {
+          "precision": 0.9911,
+          "recall": 0.9487,
+          "f1": 0.9694,
+          "support": 117
+        }
+      },
+      "photo_accuracy": 0.9828
+    }
+  },
+  "dataset": {
+    "name": "Embrapa WGISD (recortes dos cachos)",
+    "source_url": "https://github.com/thsant/wgisd",
+    "version": "6910edc5ae3aae8c20062941b1641821f0c30127",
+    "license": "CC BY-NC-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+    "institution": "Embrapa Informática Agropecuária",
+    "description": "Recortes quadrados de cada cacho anotado, uma pasta por variedade; divisões por foto iguais às do detector.",
+    "images": {
+      "train": 205,
+      "val": 37,
+      "test": 58,
+      "total": 300
+    },
+    "instances": {
+      "train": 2906,
+      "val": 489,
+      "test": 807,
+      "total": 4202
+    },
+    "varieties": [
+      "Cabernet Franc",
+      "Cabernet Sauvignon",
+      "Chardonnay",
+      "Sauvignon Blanc",
+      "Syrah"
+    ],
+    "capture": "Vinícola Guaspari, Espírito Santo do Pinhal-SP · Syrah em 27/04/2017; demais em 27/04/2018"
+  },
+  "sha256": "3645c4b85596b183989537248dc2da376c6e099b825c4eb066f685c1f4af3b6f",
+  "license": "Uso não comercial, com atribuição: pesos derivados do Embrapa WGISD (CC BY-NC-SA 4.0).",
+  "limitations": [
+    "Conhece só 5 variedades (Cabernet Franc, Cabernet Sauvignon, Chardonnay, Sauvignon Blanc, Syrah) e sempre escolhe uma delas: para Tempranillo, Touriga Nacional, Chenin Blanc ou Moscato Canelli a previsão será, por construção, uma variedade errada.",
+    "Cabernet Franc, Chardonnay, Sauvignon Blanc não estão no catálogo da OASIS; a variedade oficial da leitura continua sendo a do talhão.",
+    "Treinado com fotos de um único vinhedo: cada variedade foi fotografada num único dia (Syrah em 2017, as demais em 2018), então o modelo pode ter aprendido parte das condições daquele dia. Precisa ser validado com fotos do Vale do São Francisco.",
+    "Nas fotos de treino, os cachos tintos estavam verdes (antes do pintor): cachos maduros, roxos, são uma situação que o modelo não viu.",
+    "Probabilidades abaixo de 50 % são exibidas como baixa confiança.",
+    "Uso não comercial: os pesos derivam do WGISD (CC BY-NC-SA 4.0)."
+  ]
+}

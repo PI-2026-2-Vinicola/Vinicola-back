@@ -16,7 +16,8 @@ sys.path.insert(0, str(ROOT))
 
 from app.catalog import MATURATION_LABEL, QUALITY_LABEL, VARIETIES  # noqa: E402
 from app.services.classifier import analyze  # noqa: E402
-from app.services.detector import BUNDLED_MODEL, ColorDetector, load_yolo  # noqa: E402
+from app.catalog import MODEL_VARIETY_NAMES  # noqa: E402
+from app.services.detector import BUNDLED_MODEL, BUNDLED_VARIETY_MODEL, ColorDetector, load_variety_classifier, load_yolo  # noqa: E402
 from app.services.storage import load_image  # noqa: E402
 
 
@@ -25,18 +26,21 @@ def main() -> None:
     p.add_argument("image")
     p.add_argument("--model", default=str(BUNDLED_MODEL))
     p.add_argument("--confidence", type=float, default=None, help="limiar de confiança (padrão: o da ficha do modelo)")
+    p.add_argument("--variety-model", default=str(BUNDLED_VARIETY_MODEL), help="classificador de variedades (vazio = não usar)")
     p.add_argument("--variety", required=True, choices=[v["id"] for v in VARIETIES], help="variedade cadastrada no talhão")
     p.add_argument("--color", action="store_true", help="usa a análise de cor em vez do modelo YOLO")
     args = p.parse_args()
 
     img = load_image(Path(args.image).read_bytes())
     variety_type = next(v["type"] for v in VARIETIES if v["id"] == args.variety)
-    detector = ColorDetector() if args.color else load_yolo(Path(args.model), args.confidence)
+    detector = ColorDetector() if args.color else load_yolo(Path(args.model), args.confidence, load_variety_classifier(args.variety_model))
     out = detector.detect(img, args.variety, variety_type)
     a = analyze(out.detections, args.variety, variety_type, img)
     print(f"Detector:          {out.model_version}")
     print(f"Variedade:         {a.variety_id} {'(cadastro informado em --variety)' if args.color or getattr(detector, 'clusters_only', False) else ''}")
     print(f"Cachos detectados: {len(a.clusters)}")
+    if out.variety:
+        print(f"Variedade pela foto: {MODEL_VARIETY_NAMES.get(out.variety.label, out.variety.label)} ({out.variety.confidence:.0%}, {out.variety.clusters} cachos) — previsão do modelo")
     print(f"Confiança:         {a.confidence:.0%}")
     print(f"Condição visual:   {a.visual_condition}")
     print(f"Qualidade:         {QUALITY_LABEL[a.quality]}")
