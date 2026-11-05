@@ -1,3 +1,7 @@
-# Dependências para usar o modelo YOLO real (OASIS_DETECTOR=yolo) e treinar o modelo
+# Etapas 1 e 2 (coleta, preparo, treinamento e exportação do modelo YOLO) — separadas da API.
+# Em máquina sem GPU, instale antes o PyTorch para CPU (download bem menor):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 -r requirements.txt
-ultralytics>=8.2
+ultralytics>=8.4     # YOLO26 (treino, validação e exportação)
+onnx>=1.16           # exportação para ONNX
+onnxslim>=0.1.30     # simplificação do grafo exportado
