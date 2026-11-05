@@ -1,0 +1,189 @@
+{
+  "dataset": "ml/datasets/wgisd-cachos",
+  "observacao": "O WGISD não anota defeitos: as taxas abaixo são disparos das regras em cachos reais sem defeito anotado (medida de especificidade). A sensibilidade a defeitos reais não pôde ser medida.",
+  "meta_de_disparo": 0.02,
+  "limiares_anteriores": {
+    "brown_mild": 0.02,
+    "brown_severe": 0.06,
+    "mold": 0.05,
+    "off_color": 0.1
+  },
+  "limiares_calibrados": {
+    "brown_mild": 0.3126,
+    "brown_severe": 0.6252,
+    "mold": 0.05,
+    "off_color": 0.1
+  },
+  "distribuicao_calibracao": {
+    "Tinta": {
+      "brown": {
+        "p50": 0.0582,
+        "p90": 0.1916,
+        "p95": 0.2611,
+        "p99": 0.427
+      },
+      "mold": {
+        "p50": 0.0014,
+        "p90": 0.0147,
+        "p95": 0.0212,
+        "p99": 0.0359
+      },
+      "off_color": {
+        "p50": 0.0005,
+        "p90": 0.0108,
+        "p95": 0.0194,
+        "p99": 0.0383
+      },
+      "berry": {
+        "p50": 0.0185,
+        "p90": 0.2205,
+        "p95": 0.3149,
+        "p99": 0.5092
+      }
+    },
+    "Branca": {
+      "brown": {
+        "p50": 0.0422,
+        "p90": 0.1369,
+        "p95": 0.1758,
+        "p99": 0.2821
+      },
+      "mold": {
+        "p50": 0.0002,
+        "p90": 0.0087,
+        "p95": 0.0138,
+        "p99": 0.0255
+      },
+      "off_color": {
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0,
+        "p99": 0.0
+      },
+      "berry": {
+        "p50": 0.3209,
+        "p90": 0.6213,
+        "p95": 0.6755,
+        "p99": 0.7632
+      }
+    }
+  },
+  "disparos_com_limiares_anteriores": {
+    "train": {
+      "cachos": 3062,
+      "com_algum_achado": 0.7531,
+      "mancha_leve_ou_podridao_por_manchas": 0.7521,
+      "podridao_por_manchas_extensas": 0.4317,
+      "podridao_por_mofo": 0.0026,
+      "maturacao_desigual": 0.0003
+    },
+    "val": {
+      "cachos": 512,
+      "com_algum_achado": 0.7559,
+      "mancha_leve_ou_podridao_por_manchas": 0.7559,
+      "podridao_por_manchas_extensas": 0.4512,
+      "podridao_por_mofo": 0.002,
+      "maturacao_desigual": 0.0
+    },
+    "test": {
+      "cachos": 849,
+      "com_algum_achado": 0.7656,
+      "mancha_leve_ou_podridao_por_manchas": 0.7656,
+      "podridao_por_manchas_extensas": 0.4429,
+      "podridao_por_mofo": 0.0,
+      "maturacao_desigual": 0.0012
+    }
+  },
+  "disparos_com_limiares_calibrados": {
+    "train": {
+      "cachos": 3062,
+      "com_algum_achado": 0.0245,
+      "mancha_leve_ou_podridao_por_manchas": 0.0216,
+      "podridao_por_manchas_extensas": 0.0003,
+      "podridao_por_mofo": 0.0026,
+      "maturacao_desigual": 0.0003
+    },
+    "val": {
+      "cachos": 512,
+      "com_algum_achado": 0.0137,
+      "mancha_leve_ou_podridao_por_manchas": 0.0117,
+      "podridao_por_manchas_extensas": 0.0,
+      "podridao_por_mofo": 0.002,
+      "maturacao_desigual": 0.0
+    },
+    "test": {
+      "cachos": 849,
+      "com_algum_achado": 0.0141,
+      "mancha_leve_ou_podridao_por_manchas": 0.013,
+      "podridao_por_manchas_extensas": 0.0,
+      "podridao_por_mofo": 0.0,
+      "maturacao_desigual": 0.0012
+    }
+  },
+  "mascara_de_cor_de_baga_vs_pixels_reais": {
+    "Tinta": {
+      "imagens_com_mascara": 84,
+      "pixels_de_uva_reconhecidos_mediana": 0.0072,
+      "fundo_das_caixas_marcado_como_baga_mediana": 0.0522,
+      "faixa_hsv_dos_pixels_de_uva_p5_p50_p95": {
+        "H": [
+          12,
+          60,
+          196
+        ],
+        "S": [
+          47,
+          121,
+          196
+        ],
+        "V": [
+          40,
+          138,
+          208
+        ]
+      }
+    },
+    "Branca": {
+      "imagens_com_mascara": 53,
+      "pixels_de_uva_reconhecidos_mediana": 0.4451,
+      "fundo_das_caixas_marcado_como_baga_mediana": 0.2553,
+      "faixa_hsv_dos_pixels_de_uva_p5_p50_p95": {
+        "H": [
+          39,
+          55,
+          68
+        ],
+        "S": [
+          80,
+          144,
+          221
+        ],
+        "V": [
+          58,
+          125,
+          190
+        ]
+      }
+    }
+  },
+  "analise_de_cor_sem_modelo": {
+    "train": {
+      "imagens": 205,
+      "caixa_coincide_com_cacho_real_iou50": 0.0,
+      "iou_mediano_com_o_cacho_real_mais_proximo": 0.0393,
+      "imagens_com_anomalia_apontada": 0.9122
+    },
+    "val": {
+      "imagens": 37,
+      "caixa_coincide_com_cacho_real_iou50": 0.0,
+      "iou_mediano_com_o_cacho_real_mais_proximo": 0.0394,
+      "imagens_com_anomalia_apontada": 0.9189
+    },
+    "test": {
+      "imagens": 58,
+      "caixa_coincide_com_cacho_real_iou50": 0.0,
+      "iou_mediano_com_o_cacho_real_mais_proximo": 0.0393,
+      "imagens_com_anomalia_apontada": 0.8966
+    }
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "gerado_em": "2026-11-05T14:24:04+00:00",
+  "tarefa": "cachos",
+  "classes": [
+    "cacho"
+  ],
+  "fonte": {
+    "nome": "Embrapa WGISD",
+    "repositorio": "https://github.com/thsant/wgisd",
+    "commit": "6910edc5ae3aae8c20062941b1641821f0c30127",
+    "licenca": "CC BY-NC 4.0",
+    "imagens_na_fonte": 300,
+    "cachos_na_fonte": 4430
+  },
+  "parametros": {
+    "lado_maximo_px": 1024,
+    "fracao_validacao": 0.15,
+    "semente": 42,
+    "quase_duplicata_bits": 6,
+    "qualidade_jpeg": 92
+  },
+  "divisoes": {
+    "train": {
+      "imagens": 205,
+      "cachos": 3067,
+      "por_variedade": {
+        "Cabernet Franc": 47,
+        "Cabernet Sauvignon": 41,
+        "Chardonnay": 42,
+        "Sauvignon Blanc": 43,
+        "Syrah": 32
+      }
+    },
+    "val": {
+      "imagens": 37,
+      "cachos": 512,
+      "por_variedade": {
+        "Cabernet Franc": 8,
+        "Cabernet Sauvignon": 7,
+        "Chardonnay": 8,
+        "Sauvignon Blanc": 8,
+        "Syrah": 6
+      }
+    },
+    "test": {
+      "imagens": 58,
+      "cachos": 850,
+      "por_variedade": {
+        "Cabernet Franc": 10,
+        "Cabernet Sauvignon": 9,
+        "Chardonnay": 15,
+        "Sauvignon Blanc": 14,
+        "Syrah": 10
+      }
+    }
+  },
+  "tamanho_relativo_dos_cachos": {
+    "test": {
+      "mediana": 0.1028,
+      "min": 0.0228,
+      "max": 0.294
+    },
+    "train": {
+      "mediana": 0.1008,
+      "min": 0.0141,
+      "max": 0.3488
+    },
+    "val": {
+      "mediana": 0.105,
+      "min": 0.0359,
+      "max": 0.3302
+    }
+  },
+  "excluidas": [],
+  "rotulos": {
+    "caixas_recortadas_na_borda": 14,
+    "linhas_descartadas": 1,
+    "problemas": {
+      "SVB_20180427_151832492": [
+        "linha 9: caixa degenerada ou fora da imagem"
+      ]
+    }
+  },
+  "quase_duplicatas": {
+    "grupos": [
+      [
+        "CDY_20180427_153126820_BURST000_COVER_TOP",
+        "CDY_20180427_153126820_BURST001"
+      ]
+    ],
+    "grupos_entre_treino_e_teste_oficiais": []
+  },
+  "alertas_de_qualidade": {},
+  "modos_de_cor_na_fonte": {
+    "RGB": 300
+  }
+}
