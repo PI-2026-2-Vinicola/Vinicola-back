@@ -331,7 +331,7 @@ python ml/train.py && python ml/export_model.py --run ml/runs/oasis-cachos
 4. Dividir por sensor e dia (`import_annotations.py`) e manter um **teste fixo** de talhões e datas que nunca entram no treino.
 5. Treinar o modelo completo (`ml/dataset.yaml`, 12 classes) por transfer learning a partir do modelo de cachos ou de `yolo26n.pt`. Comparar com o atual no mesmo teste e publicar só se melhorar; o par `.onnx` + `.json` troca o modelo sem mudar código.
 6. Complementos:
-   - consultar o **Redape** e o **Digipathos** quando a rede permitir, para buscar imagens de doenças de videira com licença de reuso;
+   - a **PDDB** (Redape) já foi conferida: tem 83 fotos e 2.330 recortes de videira, rotulados por fitopatologistas, mas quase só de folhas (6 fotos com cachos), e a classe sadia tem 2 fotos. Ela pode embasar um **módulo futuro de doenças em folhas**, desde que se fotografem folhas sadias e doentes nas mesmas condições, para o modelo não aprender o fundo;
    - avaliar um modelo de **segmentação**, para medir a cor só nos pixels das bagas.
 
 > O resultado é uma previsão computacional a partir da imagem. Ele não é um diagnóstico fitossanitário e não substitui a avaliação de um responsável técnico.

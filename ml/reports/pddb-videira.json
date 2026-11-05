@@ -1,0 +1,66 @@
+{
+  "fonte": "PDDB — Base de Imagens de Sintomas de Doenças de Plantas (Embrapa Agricultura Digital)",
+  "doi": "doi:10.48432/XA1OVL",
+  "servidor": "https://www.redape.dados.embrapa.br (Dataverse 5.12.1)",
+  "versao": "1.0",
+  "licenca": "Embrapa (CC BY-NC 4.0); termo de uso: proibido uso comercial; citar Barbedo, Koenigkan e Santos (2016), Biosystems Engineering 147:104-116",
+  "coletado_em": "2026-11-05",
+  "coleta": "python ml/collect_redape.py baixar doi:10.48432/XA1OVL --filtro Videira (15 arquivos, MD5 conferido)",
+  "classes_videira": {
+    "Antracnose (Anthracnose)": {
+      "fotos_originais": 1,
+      "recortes": 0
+    },
+    "Cancro Bacteriano (Bacterial canker)": {
+      "fotos_originais": 13,
+      "recortes": 664
+    },
+    "Ferrugem (Rust)": {
+      "fotos_originais": 8,
+      "recortes": 800
+    },
+    "Mancha Folhas (Isariopsis leaf spot)": {
+      "fotos_originais": 1,
+      "recortes": 52
+    },
+    "Mildio (Downy Mildew)": {
+      "fotos_originais": 22,
+      "recortes": 597
+    },
+    "Oidio (Powdery Mildew)": {
+      "fotos_originais": 29,
+      "recortes": 134
+    },
+    "Sadia (Healthy)": {
+      "fotos_originais": 2,
+      "recortes": 0
+    },
+    "Virus (Grapevine fanleaf virus)": {
+      "fotos_originais": 7,
+      "recortes": 83
+    }
+  },
+  "totais": {
+    "fotos_originais": 83,
+    "recortes": 2330
+  },
+  "revisao_visual": {
+    "assunto_predominante": "folhas e ramos, em sua maioria sobre cartela de calibração ou fundo branco (laboratório); recortes são regiões de folhas com sintomas",
+    "fotos_com_cachos_ou_bagas": [
+      "Antracnose (Anthracnose) - 1/Antracnose.JPG",
+      "Oidio (Powdery Mildew) - 1/DSC02084.JPG",
+      "Oidio (Powdery Mildew) - 1/DSC_0183.jpg",
+      "Oidio (Powdery Mildew) - 1/DSC_0187.jpg",
+      "Oidio (Powdery Mildew) - 1/DSC_0195.jpg",
+      "Virus (Grapevine fanleaf virus) - 1/foto-5.jpg (figura escaneada comparando dois cachos)"
+    ],
+    "observacoes": [
+      "A classe Sadia tem só 2 fotos (folhas) e nenhum recorte.",
+      "Antracnose e Mancha Folhas têm 1 foto original cada.",
+      "Parte das fotos de Vírus são ilustrações escaneadas (tronco, ramos, corte de madeira, vinhedo).",
+      "Os recortes não indicam de qual foto original vieram: dividir treino e teste sem vazamento não é possível.",
+      "Cada classe foi fotografada em condições próprias (cartela, fundo branco, campo): um classificador aprenderia o fundo."
+    ]
+  },
+  "conclusao": "Fonte real e rotulada por fitopatologistas, mas de FOLHAS: não serve para detectar ou avaliar cachos (6 fotos com cachos em 83). Não foi treinado modelo com ela."
+}

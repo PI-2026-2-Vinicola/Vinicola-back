@@ -2,7 +2,7 @@
 Fontes de dados usadas no treinamento — somente dados reais e oficiais.
 
 Embrapa WGISD (Wine Grape Instance Segmentation Dataset), da Embrapa Informática Agropecuária:
-300 fotografias de campo com 4.431 cachos anotados por caixas (formato YOLO) e 2.020 com máscaras.
+300 fotografias de campo com 4.430 cachos anotados por caixas (o datasheet informa 4.431) (formato YOLO) e 2.020 com máscaras.
 As informações abaixo foram conferidas no próprio repositório (README/datasheet e EXIF das imagens
 originais) na versão fixada em WGISD_COMMIT.
 """
