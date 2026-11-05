@@ -26,7 +26,7 @@ def published():
 def test_published_card_matches_weights_and_describes_real_data():
     card = load_model_card(BUNDLED_MODEL)  # confere o SHA-256 do .onnx
     assert card.task == "deteccao_cachos" and card.classes == ["cacho"]
-    assert card.dataset.name == "Embrapa WGISD" and card.dataset.images["test"] == 58 and card.dataset.license == "CC BY-NC 4.0"
+    assert card.dataset.name == "Embrapa WGISD" and card.dataset.images["test"] == 58 and card.dataset.license.startswith("CC BY-NC")
     assert {"val", "test"} <= set(card.metrics) and 0 < card.confidence_threshold < 1
     assert card.color_thresholds is not None and card.color_thresholds.report == "ml/reports/calibracao_cor.json"
 

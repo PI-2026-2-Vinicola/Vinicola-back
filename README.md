@@ -24,8 +24,10 @@ API, firmware e pipeline de visão computacional da OASIS, solução de IoT + IA
 | `iot/esp32-cam/` | Device | Firmware Arduino: captura, NTP, DHT22 opcional, HTTP multipart ou MQTT, deep sleep |
 | `edge/` | Edge | Gateway que avalia a qualidade da imagem, redimensiona, encaminha e mantém fila offline |
 | `app/` | Cloud | API FastAPI (detalhes abaixo) |
-| `ml/` | IA | Classes do modelo, treino YOLO, inferência e guia de anotação |
-| `tests/` | Qualidade | 98 testes Pytest cobrindo API, importação, análise de imagem, edge e integrações (com respostas simuladas) |
+| `ml/` | IA | Coleta (Embrapa WGISD), preparo do dataset, treino YOLO26, avaliação, exportação ONNX e fluxo de anotação |
+| `models/` | IA | Modelo publicado: `oasis-cachos.onnx` + ficha `oasis-cachos.json` (dados, métricas e limitações) |
+| `docs/yolo-embrapa.md` | IA | Documentação da integração: fontes da Embrapa, dataset, treinamento, métricas e inferência |
+| `tests/` | Qualidade | Testes Pytest cobrindo API, importação, análise de imagem, modelo ONNX, pipeline de dados, edge e integrações (com respostas simuladas) |
 
 Dentro de `app/`:
 
@@ -36,7 +38,9 @@ Dentro de `app/`:
 | `models.py` | Modelo relacional (SQLAlchemy) — espelha os scripts do repositório Vinicola-bd |
 | `schemas.py` | Contrato JSON (camelCase), o mesmo tipado no frontend |
 | `routers/` | `auth`, `users`, `sensors`, `ingest`, `readings`, `stats`, `imports`, `system`, `integrations` |
-| `services/detector.py` | Análise de cor (padrão) e YOLO (quando há pesos treinados com as classes da OASIS) |
+| `services/detector.py` | YOLO em ONNX (modelo de cachos publicado) com análise de cor dentro de cada cacho; análise de cor sozinha sem modelo |
+| `services/model_card.py` | Ficha do modelo: validação do par `.onnx` + `.json` (SHA-256, tarefa e classes) |
+| `annotation_export.py` | Exportação das fotos da OASIS com pré-anotações para Label Studio/CVAT (dataset próprio) |
 | `services/thingspeak.py` | Leitura do canal do ThingSpeak (REST), conversão dos campos, cache e falhas |
 | `services/embrapa.py` | AgroAPI da Embrapa: OAuth2, RespondeAgro v1 e Agritec v2 (Zarc), cache e falhas |
 | `services/sanitize.py` | Sanitização por lista de permissões do HTML das respostas do RespondeAgro |
@@ -72,6 +76,7 @@ python -m app.cli check-config        # valida as configurações de produção
 python -m app.cli check-integrations  # consulta ThingSpeak e Embrapa de verdade e lista campos, livro e culturas
 python -m app.cli seed-demo --days 30 # dados SINTÉTICOS (sensores DEMO-01..03, origem "demonstracao")
 python -m app.cli clear-demo          # remove todos os dados de demonstração
+python -m app.cli export-dataset      # fotos de campo + pré-anotações para revisão no Label Studio/CVAT
 ```
 
 Os dados de demonstração existem apenas para apresentar a interface sem hardware: não têm coordenadas nem imagens, ficam marcados como “Demonstração” no painel e não entram nos números da página pública.
@@ -96,8 +101,9 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | `JWT_EXPIRES_MINUTES` | `480` | Validade da sessão |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_LOCK_MINUTES` | `5` / `15` | Bloqueio após tentativas de login falhas |
 | `OASIS_ADMIN_EMAIL` / `_NAME` / `_PASSWORD` | `admin@oasis.agr.br` / … / vazio | Administrador inicial |
-| `OASIS_DETECTOR` | `auto` | `auto` (YOLO se houver pesos, senão cor), `color` ou `yolo` |
-| `OASIS_MODEL_PATH` / `OASIS_MODEL_CONFIDENCE` | `models/oasis-grapes.pt` / `0.35` | Pesos e confiança mínima do YOLO |
+| `OASIS_DETECTOR` | `auto` | `auto` (YOLO se o modelo existir, senão cor), `color` ou `yolo` |
+| `OASIS_MODEL_PATH` | `models/oasis-cachos.onnx` | Modelo ONNX + ficha `.json` (ou pesos Ultralytics `.pt`). Um `.env` antigo com `models/oasis-grapes.pt` usa o modelo publicado |
+| `OASIS_MODEL_CONFIDENCE` | vazio | Confiança mínima das detecções; vazio = limiar recomendado na ficha (escolhido na validação) |
 | `OASIS_TIMEZONE` | `America/Recife` | Fuso usado nos filtros e gráficos por dia/hora |
 | `OASIS_FARM_NAME` | vazio | Nome da propriedade exibido no painel |
 | `STORAGE_DIR` | `storage` | Pasta das imagens e miniaturas |
@@ -161,14 +167,15 @@ O JSON é em **camelCase**. Erros sempre trazem `detail` em português (validaç
 
 O fluxo de `/ingest`: validação do arquivo (JPEG/PNG/WEBP, limite de tamanho, proteção contra imagens gigantes) → correção de orientação e **remoção de EXIF/GPS** → detector → classificação → gravação da imagem (máx. 1600 px) e da miniatura (360 px) → leitura com código `OA-00001`.
 
-`app/services/detector.py` tem duas implementações reais:
+`app/services/detector.py` tem estas implementações:
 
-- **Análise de cor** (`color`, padrão sem modelo): segmentação HSV que localiza a região do cacho e mede manchas acastanhadas (mancha leve/podridão), mofo acinzentado e bagas fora de cor (tintas em véraison). A variedade é a cadastrada no talhão do sensor; o estágio de maturação vem da cor das bagas. Limitações conhecidas: depende de enquadramento e luz; em uvas brancas não distingue bagas verdes da folhagem; foi calibrada com imagens sintéticas e deve ser ajustada com fotos de campo.
-- **YOLO** (`yolo`): Ultralytics com os pesos em `OASIS_MODEL_PATH` e as classes de `ml/dataset.yaml` (variedades + anomalias). Com `auto`, é usado assim que o arquivo de pesos existir.
+- **YOLO de cachos em ONNX** (`yolo`, padrão): o modelo publicado em `models/oasis-cachos.onnx` (YOLO26n) foi treinado com as 300 fotos reais do **Embrapa WGISD** e roda com o ONNX Runtime, sem PyTorch na API. Ele localiza os cachos; a variedade é a cadastrada no talhão e, dentro de cada cacho detectado (até 12), a análise de cor aponta manchas, mofo e bagas fora de cor. Os limiares dessa regra foram calibrados com cachos reais (`ml/reports/calibracao_cor.json`). Pré-processamento (letterbox 640 × 640) e pós-processamento estão em `letterbox()` e `decode_yolo_output()`. Os dados, as métricas de teste e as limitações estão na ficha `models/oasis-cachos.json` e em [`docs/yolo-embrapa.md`](docs/yolo-embrapa.md).
+- **Análise de cor** (`color`, usada sem modelo): segmentação HSV que localiza a região do cacho e mede manchas acastanhadas, mofo acinzentado e bagas fora de cor. **Avaliada com as fotos reais do WGISD, ela não localiza os cachos** (a caixa não coincidiu com nenhum cacho anotado) e aponta anomalias na maioria das fotos — por isso é só o recurso de contingência.
+- **YOLO completo** (`.pt` com as 12 classes de `ml/dataset.yaml`): para o modelo futuro treinado com o dataset próprio (requer `ultralytics`).
 
-**Situação do YOLO:** nenhum peso treinado foi publicado (`models/` só tem `.gitkeep`); a análise de cor é o detector ativo. A integração foi verificada com a biblioteca Ultralytics 8.4 e um modelo genérico (`yolo11n.pt`, COCO) apenas para conferir o código: modelos **sem nenhuma classe da OASIS são recusados** (no modo `auto` a API volta para a análise de cor; no modo `yolo`, não inicia), e classes fora do catálogo são descartadas na inferência — a saída de um modelo genérico nunca vira variedade ou anomalia. As caixas são recortadas nas bordas da imagem. `GET /api/v1/analysis/model` informa o detector em uso e só as classes que ele realmente produz.
+**Troca e proteção do modelo:** um modelo ONNX só é carregado se o arquivo conferir com a sua ficha (SHA-256) e se as classes forem compatíveis com a tarefa; pesos sem nenhuma classe da OASIS (por exemplo, modelos genéricos do COCO) são recusados. No modo `auto`, qualquer falha volta para a análise de cor e é registrada no log; no modo `yolo`, a API não inicia. `GET /api/v1/analysis/model` informa o modelo em uso, a ficha, o que cada parte da análise decide (modelo, cadastro ou regra) e as limitações.
 
-A análise roda fora do laço de eventos da API, com limite de `OASIS_ANALYSIS_TIMEOUT_SECONDS` (504 se exceder); falhas do detector devolvem 503 sem gravar a leitura. Na primeira inferência em CPU, o YOLO leva alguns segundos para aquecer.
+A análise roda fora do laço de eventos da API, com limite de `OASIS_ANALYSIS_TIMEOUT_SECONDS` (504 se exceder); falhas do detector devolvem 503 sem gravar a leitura.
 
 As regras de `app/services/classifier.py`:
 
@@ -217,7 +224,7 @@ A aba **Uvas** consome duas APIs da [AgroAPI](https://www.agroapi.cnptia.embrapa
 
 - **Credenciais externas:** sem `THINGSPEAK_CHANNEL_ID` (e a Read API Key, se o canal for privado) o Monitoramento mostra “não configurado”; sem `EMBRAPA_CONSUMER_KEY`/`EMBRAPA_CONSUMER_SECRET` a aba Uvas informa a indisponibilidade do conteúdo da Embrapa — nada é simulado.
 - **Agritec:** cultivares, adubação e produtividade atendem culturas que não incluem a uva; só o Zarc é usado. Se a lista de culturas não tiver uva, a aba informa isso.
-- **YOLO:** depende de imagens do vinhedo anotadas e validadas por um responsável técnico (ver `ml/README.md`).
+- **Modelo YOLO:** treinado só com o WGISD (uma propriedade em Espírito Santo do Pinhal-SP, duas datas, duas câmeras); localiza cachos, mas não identifica variedade, doença ou qualidade. Ainda não foi avaliado com fotos do Vale do São Francisco nem das câmeras ESP32-CAM. Qualidade e doenças dependem de um dataset próprio anotado e validado por um responsável técnico (`python -m app.cli export-dataset`, ver `ml/README.md`). Pesos de uso não comercial (WGISD, CC BY-NC 4.0).
 - **Cache e limite por processo:** com várias instâncias da API, cada uma mantém o seu (para escalar, usar Redis).
 
 ## Segurança

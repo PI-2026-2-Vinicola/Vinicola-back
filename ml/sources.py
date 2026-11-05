@@ -10,8 +10,11 @@ originais) na versão fixada em WGISD_COMMIT.
 WGISD_REPO = "https://github.com/thsant/wgisd"
 # Versão usada no treinamento (último commit do repositório, 23/08/2022). Fixar a versão torna o dataset reproduzível.
 WGISD_COMMIT = "6910edc5ae3aae8c20062941b1641821f0c30127"
-WGISD_LICENSE = "CC BY-NC 4.0"
-WGISD_LICENSE_URL = "https://creativecommons.org/licenses/by-nc/4.0/"
+# O GitHub declara CC BY-NC 4.0; o registro oficial no Zenodo (DOI 10.5281/zenodo.3361736), CC BY-NC-SA 4.0.
+# Vale a mais restritiva: uso não comercial, com atribuição e compartilhamento pela mesma licença.
+WGISD_LICENSE = "CC BY-NC-SA 4.0"
+WGISD_LICENSE_URL = "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+WGISD_DOI = "10.5281/zenodo.3361736"
 WGISD_INSTITUTION = "Embrapa Informática Agropecuária"
 WGISD_AUTHORS = "T. T. Santos, L. L. de Souza, A. A. Santos e S. Avila"
 WGISD_PAPER = "Santos et al., Grape detection, segmentation and tracking using deep neural networks and three-dimensional association (arXiv:1907.11819)"

@@ -171,7 +171,7 @@ def main() -> None:
             "capture": f"{WGISD_SITE['local']}, {WGISD_SITE['municipio']}-{WGISD_SITE['uf']} · 27/04/2017 (Syrah) e 27/04/2018 · Canon EOS REBEL T3i e Motorola Moto Z2 Play",
         },
         "sha256": file_sha256(onnx_path),
-        "license": "Uso não comercial, com atribuição: pesos derivados do Embrapa WGISD (CC BY-NC 4.0).",
+        "license": f"Uso não comercial, com atribuição: pesos derivados do Embrapa WGISD ({WGISD_LICENSE}).",
         "limitations": [],
         "pretrained": bool(summary.get("pretrained", str(train_args.get("model", "")).endswith(".pt"))),
         "end2end": end2end,
@@ -230,7 +230,7 @@ def main() -> None:
         "Ainda não foi avaliado com fotos do Vale do São Francisco nem das câmeras ESP32-CAM da OASIS; o desempenho pode cair até que imagens locais sejam anotadas e incluídas no treino.",
         "Treinado do zero (sem pesos pré-treinados)." if not card["pretrained"] else "Treinado por transfer learning a partir de pesos pré-treinados do Ultralytics.",
         f"Detecções com confiança abaixo de {threshold:.2f} são descartadas (limiar de maior F1 na validação).".replace(".", ",", 1),
-        "Uso não comercial: os pesos derivam do WGISD (CC BY-NC 4.0); citar a Embrapa e os autores do dataset.",
+        f"Uso não comercial: os pesos derivam do WGISD ({WGISD_LICENSE}); citar a Embrapa e os autores do dataset.",
     ]
     ModelCard.model_validate(card)  # a ficha publicada precisa ser válida para a API
     card_file.write_text(json.dumps(card, ensure_ascii=False, indent=2), encoding="utf-8")
