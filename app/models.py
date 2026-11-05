@@ -103,6 +103,10 @@ class Reading(Base):
     thumb_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="sensor")
     model_version: Mapped[str] = mapped_column(String(80))
+    # Variedade prevista pela foto (classificador YOLO de variedades) e sua probabilidade. A variedade
+    # oficial da leitura continua sendo a do talhão (variety_id); esta é uma previsão para comparação.
+    predicted_variety: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    variety_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     processing_ms: Mapped[int] = mapped_column(Integer, default=0)
     stage: Mapped[str] = mapped_column(String(12), default="concluida")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

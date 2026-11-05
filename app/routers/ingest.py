@@ -15,14 +15,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from ..catalog import ANOMALY_TEXT, GENERIC_CLUSTER_CLASS, MILD_ANOMALIES, MODEL_CLASSES, VARIETIES, variety_from_class
+from ..catalog import ANOMALY_TEXT, GENERIC_CLUSTER_CLASS, MILD_ANOMALIES, MODEL_CLASSES, MODEL_VARIETY_NAMES, VARIETIES, variety_from_class
 from ..config import get_settings
 from ..database import get_db
 from ..deps import authorize_device, current_user, current_user_optional, device_token_header
 from ..models import EnvironmentReading, Reading, User, Variety
-from ..schemas import AnalysisComponentOut, AnalysisModelOut, ModelCardOut, ModelClassOut, ModelDatasetOut, ModelMetricsOut, ReadingOut
+from ..schemas import (
+    AnalysisComponentOut, AnalysisModelOut, ModelCardOut, ModelClassOut, ModelDatasetOut, ModelMetricsOut, ReadingOut, VarietyClassOut,
+    VarietyModelOut,
+)
 from ..services.classifier import ANOMALY_MIN_CONFIDENCE, analyze
-from ..services.detector import ColorDetector, OnnxYoloDetector, YoloDetector, get_detector, resolve_model_path
+from ..services.detector import ColorDetector, OnnxVarietyClassifier, OnnxYoloDetector, YoloDetector, get_detector, resolve_model_path
+from ..services.model_card import ClassificationMetrics
 from ..services.readings import persist_reading, to_reading_out
 from ..services.storage import InvalidImage, image_file, load_image, save_image
 from ..services.timeutil import as_utc, utcnow
@@ -70,6 +74,26 @@ def _br(value: float, digits: int = 2) -> str:
     return f"{value:.{digits}f}".replace(".", ",")
 
 
+def _variety_out(classifier: OnnxVarietyClassifier) -> VarietyModelOut:
+    card = classifier.card
+    test = card.metrics.get("test")
+    test = test if isinstance(test, ClassificationMetrics) else None
+    return VarietyModelOut(
+        name=card.name,
+        version=card.version,
+        architecture=card.architecture,
+        classes=[VarietyClassOut(name=c, label=MODEL_VARIETY_NAMES.get(c, c), in_catalog=variety_from_class(c) is not None) for c in card.classes],
+        accuracy=test.accuracy if test else None,
+        balanced_accuracy=test.balanced_accuracy if test else None,
+        photo_accuracy=test.photo_accuracy if test else None,
+        test_photos=test.images if test else None,
+        per_class_recall={c: v["recall"] for c, v in test.per_class.items()} if test else {},
+        dataset=f"{card.dataset.name} ({card.dataset.institution})",
+        license=card.license,
+        limitations=card.limitations,
+    )
+
+
 COLOR_FALLBACK_LIMITS = [
     "A análise de cor não reconhece a variedade: usa a variedade cadastrada no talhão do sensor.",
     "Avaliada com fotos reais de campo (Embrapa WGISD), a caixa encontrada pela análise de cor não coincidiu com os cachos "
@@ -99,7 +123,13 @@ def analysis_model(_: User = Depends(current_user)):
         )
         components = [
             AnalysisComponentOut(item="Localização e contagem dos cachos", source=f"Modelo {detector.card.architecture} treinado ({detector.card.name} {detector.card.version})", kind="modelo"),
-            AnalysisComponentOut(item="Variedade", source="Cadastro do talhão do sensor (o modelo não identifica variedades)", kind="cadastro"),
+            AnalysisComponentOut(
+                item="Variedade",
+                source=(f"Prevista pelo classificador YOLO de variedades ({detector.variety.card.name} {detector.variety.card.version}, "
+                        f"{len(detector.variety.classes)} variedades); a do cadastro do talhão continua como referência")
+                if detector.variety else "Cadastro do talhão do sensor (o modelo não identifica variedades)",
+                kind="modelo" if detector.variety else "cadastro",
+            ),
             AnalysisComponentOut(item="Manchas, mofo, maturação desigual e estágio de maturação", source="Análise de cor (regra) dentro de cada cacho detectado", kind="regra"),
         ]
         classes = [_class_out(GENERIC_CLUSTER_CLASS)] + [_class_out(c, "analise_cor") for c in detector.classes if c != GENERIC_CLUSTER_CLASS]
@@ -147,6 +177,7 @@ def analysis_model(_: User = Depends(current_user)):
         limitations=limitations,
         components=components,
         card=_card_out(detector) if onnx else None,
+        variety_model=_variety_out(detector.variety) if onnx and detector.variety else None,
     )
 
 
@@ -241,6 +272,7 @@ async def ingest(
             image_path=path,
             thumb_path=thumb,
             created_by=user.id if user else None,
+            variety=output.variety,
         )
     except IntegrityError:
         db.rollback()

@@ -17,11 +17,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..catalog import GENERIC_CLUSTER_CLASS, MODEL_CLASSES
+from ..catalog import GENERIC_CLUSTER_CLASS, MODEL_CLASSES, MODEL_VARIETY_NAMES
 
 # deteccao_cachos: o modelo localiza cachos (classe "cacho"); variedade e anomalias vêm de outras fontes.
 # deteccao_completa: o modelo também identifica variedade e anomalias (classes de app.catalog.MODEL_CLASSES).
-ModelTask = Literal["deteccao_cachos", "deteccao_completa"]
+# classificacao_variedade: o modelo recebe o recorte de um cacho e diz a variedade.
+ModelTask = Literal["deteccao_cachos", "deteccao_completa", "classificacao_variedade"]
 
 
 class SplitMetrics(BaseModel):
@@ -34,6 +35,16 @@ class SplitMetrics(BaseModel):
     map50: float
     map50_95: float
     confidence: float = Field(description="limiar de confiança em que precisão, recall e F1 foram medidos")
+
+
+class ClassificationMetrics(BaseModel):
+    split: str
+    images: int  # fotos de onde vieram os recortes
+    samples: int  # recortes (um por cacho)
+    accuracy: float
+    balanced_accuracy: float
+    per_class: dict[str, dict[str, float]]
+    photo_accuracy: float | None = Field(default=None, description="acerto da variedade por foto, combinando os cachos detectados")
 
 
 class DatasetInfo(BaseModel):
@@ -73,7 +84,7 @@ class ModelCard(BaseModel):
     iou_threshold: float
     trained_at: datetime
     training: dict
-    metrics: dict[str, SplitMetrics]
+    metrics: dict[str, SplitMetrics | ClassificationMetrics]
     dataset: DatasetInfo
     sha256: str
     license: str
@@ -111,7 +122,7 @@ def load_model_card(model_path: Path) -> ModelCard:
     digest = file_sha256(model_path)
     if digest != card.sha256:
         raise ModelCardError(f"O arquivo {model_path.name} não corresponde à ficha {path.name} (SHA-256 diferente): publique o par gerado pelo mesmo treinamento.")
-    allowed = [GENERIC_CLUSTER_CLASS] if card.task == "deteccao_cachos" else MODEL_CLASSES
+    allowed = {"deteccao_cachos": [GENERIC_CLUSTER_CLASS], "deteccao_completa": MODEL_CLASSES, "classificacao_variedade": list(MODEL_VARIETY_NAMES)}[card.task]
     unknown = [c for c in card.classes if c not in allowed]
     if not card.classes or unknown:
         raise ModelCardError(f"Classes do modelo incompatíveis com a tarefa {card.task}: {unknown or 'nenhuma classe'}.")

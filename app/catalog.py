@@ -66,6 +66,13 @@ MODEL_CLASSES = [yolo_class(v) for v in VARIETY_IDS] + list(MILD_ANOMALIES) + li
 # Classe única do modelo de detecção de cachos treinado com o Embrapa WGISD (ml/README.md): o cacho é
 # localizado pelo modelo, sem identificar a variedade.
 GENERIC_CLUSTER_CLASS = "cacho"
+# Variedades que o classificador de variedades pode prever: as do catálogo e as do Embrapa WGISD
+# (Cabernet Franc, Chardonnay e Sauvignon Blanc não são cultivadas no catálogo da OASIS, mas o modelo as conhece).
+MODEL_VARIETY_NAMES = {yolo_class(v["id"]): v["name"] for v in VARIETIES} | {
+    "cabernet_franc": "Cabernet Franc",
+    "chardonnay": "Chardonnay",
+    "sauvignon_blanc": "Sauvignon Blanc",
+}
 
 MATURATION_LABEL = {
     "desenvolvimento": "Em desenvolvimento",

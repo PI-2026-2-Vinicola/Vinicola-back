@@ -115,6 +115,10 @@ class ReadingOut(CamelModel):
     model_version: str
     processing_ms: int
     stage: str
+    # Variedade prevista pela foto (classificador YOLO de variedades); varietyId continua sendo a do talhão.
+    predicted_variety: str | None = None
+    predicted_variety_name: str | None = None
+    variety_confidence: float | None = None
 
 
 class ReadingPage(CamelModel):
@@ -449,6 +453,29 @@ class ModelCardOut(CamelModel):
     sha256: str
 
 
+class VarietyClassOut(CamelModel):
+    name: str  # classe do modelo, ex.: syrah
+    label: str  # nome da variedade
+    in_catalog: bool  # variedade cultivada no catálogo da OASIS
+
+
+class VarietyModelOut(CamelModel):
+    """Classificador de variedades em uso (models/oasis-variedades.json)."""
+
+    name: str
+    version: str
+    architecture: str
+    classes: list[VarietyClassOut]
+    accuracy: float | None  # recortes de cachos do teste
+    balanced_accuracy: float | None
+    photo_accuracy: float | None  # variedade por foto, combinando os cachos detectados
+    test_photos: int | None
+    per_class_recall: dict[str, float]
+    dataset: str
+    license: str
+    limitations: list[str]
+
+
 class AnalysisModelOut(CamelModel):
     detector: str  # color | yolo
     version: str
@@ -465,6 +492,7 @@ class AnalysisModelOut(CamelModel):
     limitations: list[str]
     components: list[AnalysisComponentOut] = []
     card: ModelCardOut | None = None
+    variety_model: VarietyModelOut | None = None
 
 
 # ------------------------------------------------------------------ integrações externas

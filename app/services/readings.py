@@ -6,11 +6,11 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ..catalog import variety_from_class
+from ..catalog import MODEL_VARIETY_NAMES, variety_from_class
 from ..models import Detection, Reading, Sensor
 from ..schemas import DetectionOut, ReadingOut
 from .classifier import Analysis
-from .detector import RawDetection
+from .detector import RawDetection, VarietyPrediction
 from .timeutil import as_utc, from_db
 
 API = "/api/v1"
@@ -34,6 +34,7 @@ def persist_reading(
     thumb_path: str | None = None,
     created_by: int | None = None,
     commit: bool = True,
+    variety: VarietyPrediction | None = None,
 ) -> Reading:
     reading = Reading(
         sensor_id=sensor.id,
@@ -53,6 +54,8 @@ def persist_reading(
         processing_ms=processing_ms,
         stage="concluida",
         created_by=created_by,
+        predicted_variety=variety.label if variety else None,
+        variety_confidence=variety.confidence if variety else None,
     )
     for d in detections:
         kind = "cacho" if (variety_from_class(d.label) or d.label == "cacho") else "anomalia"
@@ -90,4 +93,7 @@ def to_reading_out(r: Reading) -> ReadingOut:
         model_version=r.model_version,
         processing_ms=r.processing_ms,
         stage=r.stage,
+        predicted_variety=r.predicted_variety,
+        predicted_variety_name=MODEL_VARIETY_NAMES.get(r.predicted_variety, r.predicted_variety) if r.predicted_variety else None,
+        variety_confidence=r.variety_confidence,
     )

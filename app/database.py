@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -35,3 +35,23 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+# Colunas adicionadas depois da criação do esquema. `create_all` não altera tabelas existentes, então
+# bancos já em uso (ex.: o oasis.db local) recebem as colunas aqui — sem apagar nenhum dado.
+ADDED_COLUMNS = [
+    ("readings", "predicted_variety", "VARCHAR(40)"),
+    ("readings", "variety_confidence", "FLOAT"),
+]
+
+
+def ensure_columns(bind=None) -> list[str]:
+    bind = bind or engine
+    existing = {t: {c["name"] for c in inspect(bind).get_columns(t)} for t in {t for t, _, _ in ADDED_COLUMNS} if inspect(bind).has_table(t)}
+    added = []
+    with bind.begin() as conn:
+        for table, column, ddl in ADDED_COLUMNS:
+            if table in existing and column not in existing[table]:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                added.append(f"{table}.{column}")
+    return added

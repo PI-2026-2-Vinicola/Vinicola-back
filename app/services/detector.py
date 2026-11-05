@@ -31,7 +31,7 @@ from typing import Protocol
 import numpy as np
 from PIL import Image
 
-from ..catalog import GENERIC_CLUSTER_CLASS, MILD_ANOMALIES, MODEL_CLASSES, SEVERE_ANOMALIES, VARIETY_IDS, yolo_class
+from ..catalog import GENERIC_CLUSTER_CLASS, MILD_ANOMALIES, MODEL_CLASSES, MODEL_VARIETY_NAMES, SEVERE_ANOMALIES, VARIETY_IDS, yolo_class
 from ..config import get_settings
 from .model_card import ModelCard, load_model_card
 
@@ -47,10 +47,21 @@ class RawDetection:
 
 
 @dataclass
+class VarietyPrediction:
+    """Variedade prevista pela foto (classificador de variedades sobre os cachos detectados)."""
+
+    label: str  # classe do modelo, ex.: syrah, chardonnay
+    confidence: float  # probabilidade média ponderada pela confiança de cada cacho
+    clusters: int  # cachos usados na votação
+    probabilities: dict[str, float]
+
+
+@dataclass
 class DetectorOutput:
     detections: list[RawDetection]
     model_version: str
     notes: list[str] = field(default_factory=list)
+    variety: VarietyPrediction | None = None
 
 
 class Detector(Protocol):
@@ -352,6 +363,78 @@ def decode_yolo_output(
     return dets
 
 
+# --------------------------------------------------------------------------- variedade (classificação YOLO)
+VARIETY_MIN_SIDE = 48  # px na imagem com lado maior de 1024 — cachos menores (distantes) não votam
+MAX_CLUSTERS_CLASSIFIED = 8
+
+
+def square_crop_box(cx: float, cy: float, w: float, h: float, width: int, height: int, margin: float = 0.10) -> tuple[int, int, int, int]:
+    """
+    Caixa quadrada (pixels) centrada no cacho, com margem, recortada às bordas — o MESMO recorte usado
+    para montar o dataset de variedades (ml/prepare_variety_dataset.py), para treino e uso coincidirem.
+    """
+    side = max(w * width, h * height) * (1 + 2 * margin)
+    x0, y0 = max(0, round(cx * width - side / 2)), max(0, round(cy * height - side / 2))
+    x1, y1 = min(width, round(cx * width + side / 2)), min(height, round(cy * height + side / 2))
+    return x0, y0, x1, y1
+
+
+def classify_input(crop: Image.Image, size: int) -> np.ndarray:
+    """Pré-processamento de classificação do Ultralytics: lado menor = size (bilinear), recorte central, 0–1."""
+    w, h = crop.size
+    if w <= h:
+        nw, nh = size, int(size * h / w)
+    else:
+        nw, nh = int(size * w / h), size
+    img = crop.convert("RGB").resize((nw, nh), Image.Resampling.BILINEAR)
+    left, top = int(round((nw - size) / 2.0)), int(round((nh - size) / 2.0))
+    img = img.crop((left, top, left + size, top + size))
+    return np.ascontiguousarray(np.asarray(img, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0)
+
+
+class OnnxVarietyClassifier:
+    """Classificador YOLO de variedades exportado para ONNX (ml/export_variety.py), com a sua ficha."""
+
+    def __init__(self, model_path: str | Path):
+        import onnxruntime as ort
+
+        self.path = Path(model_path)
+        self.card: ModelCard = load_model_card(self.path)
+        if self.card.task != "classificacao_variedade":
+            raise ValueError(f"{self.path.name} não é um classificador de variedades (tarefa {self.card.task}).")
+        opts = ort.SessionOptions()
+        opts.log_severity_level = 3
+        self.session = ort.InferenceSession(str(self.path), sess_options=opts, providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        self.classes = list(self.card.classes)
+
+    def probabilities(self, crop: Image.Image) -> np.ndarray:
+        out = np.asarray(self.session.run(None, {self.input_name: classify_input(crop, self.card.input_size)})[0], dtype=np.float64)[0]
+        if out.min() < 0 or abs(out.sum() - 1) > 1e-3:  # logits → probabilidades
+            out = np.exp(out - out.max())
+            out /= out.sum()
+        return out
+
+    def predict(self, img: Image.Image, clusters: list[RawDetection]) -> VarietyPrediction | None:
+        """Classifica os cachos detectados (os de maior confiança) e combina os votos pela confiança de cada um."""
+        W, H = img.size
+        scale = 1024 / max(W, H)  # o lado mínimo vale para a imagem no tamanho do dataset (1024 px)
+        total, weight, used = np.zeros(len(self.classes)), 0.0, 0
+        for c in clusters[:MAX_CLUSTERS_CLASSIFIED]:
+            x, y, w, h = c.box
+            if max(w * W, h * H) * scale < VARIETY_MIN_SIDE:
+                continue
+            crop = img.crop(square_crop_box(x + w / 2, y + h / 2, w, h, W, H))
+            total += c.confidence * self.probabilities(crop)
+            weight += c.confidence
+            used += 1
+        if not used:
+            return None
+        probs = total / weight
+        k = int(probs.argmax())
+        return VarietyPrediction(self.classes[k], round(float(probs[k]), 3), used, {c: round(float(v), 3) for c, v in zip(self.classes, probs)})
+
+
 class OnnxYoloDetector:
     """
     Modelo YOLO exportado para ONNX (gerado por ml/export_model.py) com a sua ficha (.json).
@@ -360,7 +443,8 @@ class OnnxYoloDetector:
 
     name = "yolo"
 
-    def __init__(self, model_path: str | Path, confidence: float | None = None, thresholds: ColorThresholds = DEFAULT_THRESHOLDS):
+    def __init__(self, model_path: str | Path, confidence: float | None = None, thresholds: ColorThresholds = DEFAULT_THRESHOLDS,
+                 variety: OnnxVarietyClassifier | None = None):
         import onnxruntime as ort  # import tardio: sem onnxruntime, a API segue com a análise de cor
 
         self.path = Path(model_path)
@@ -389,6 +473,9 @@ class OnnxYoloDetector:
             self.description = f"Modelo {self.card.architecture} treinado com as classes de variedades e anomalias da OASIS."
             self.classes = list(self.card.classes)
         self.model_classes = list(self.card.classes)
+        self.variety = variety if self.clusters_only else None
+        if self.variety:
+            self.version = f"YOLO cachos · {self.card.name} {self.card.version} + variedades {self.variety.card.version} + análise de cor v1"[:80]
 
     def predict(self, img: Image.Image) -> list[RawDetection]:
         tensor, ratio, left, top = letterbox(img, self.input_size)
@@ -410,7 +497,11 @@ class OnnxYoloDetector:
         notes = [f"{len(clusters)} cacho(s) localizado(s) pelo modelo com confiança ≥ " + f"{self.confidence:.2f}.".replace(".", ",", 1)]
         if len(clusters) > MAX_CLUSTERS_ANALYZED:
             notes.append(f"Análise de cor feita nos {MAX_CLUSTERS_ANALYZED} cachos de maior confiança.")
-        return DetectorOutput(clusters + anomalies, self.version, notes)
+        variety = self.variety.predict(img, clusters) if self.variety and clusters else None
+        if variety:
+            name = MODEL_VARIETY_NAMES.get(variety.label, variety.label)
+            notes.append(f"Variedade prevista pela foto: {name} ({variety.confidence:.0%}), a partir de {variety.clusters} cacho(s).")
+        return DetectorOutput(clusters + anomalies, self.version, notes, variety)
 
 
 # --------------------------------------------------------------------------- YOLO
@@ -503,8 +594,25 @@ class MockDetector:
         return DetectorOutput(dets, self.version)
 
 
-# Modelo publicado no repositório (treinado com o Embrapa WGISD; ver ml/README.md).
+# Modelos publicados no repositório (treinados com o Embrapa WGISD; ver ml/README.md).
 BUNDLED_MODEL = Path(__file__).resolve().parents[2] / "models" / "oasis-cachos.onnx"
+BUNDLED_VARIETY_MODEL = Path(__file__).resolve().parents[2] / "models" / "oasis-variedades.onnx"
+
+
+def load_variety_classifier(configured: str) -> OnnxVarietyClassifier | None:
+    """Classificador de variedades opcional: sem o arquivo (ou com OASIS_VARIETY_MODEL_PATH vazio), a variedade fica só a do talhão."""
+    if not configured.strip():
+        return None
+    path = Path(configured)
+    if not path.exists() and BUNDLED_VARIETY_MODEL.exists() and configured.strip().replace("\\", "/") in ("models/oasis-variedades.onnx",):
+        path = BUNDLED_VARIETY_MODEL
+    if not path.exists():
+        return None
+    try:
+        return OnnxVarietyClassifier(path)
+    except Exception as exc:  # pragma: no cover - depende do ambiente
+        log.warning("Classificador de variedades indisponível (%s); a variedade será só a do talhão.", exc)
+        return None
 
 
 # Valor padrão de OASIS_MODEL_PATH antes do modelo publicado (ainda presente em arquivos .env antigos).
@@ -524,9 +632,9 @@ def resolve_model_path(configured: str) -> Path:
     return path
 
 
-def load_yolo(path: Path, confidence: float | None) -> Detector:
+def load_yolo(path: Path, confidence: float | None, variety: OnnxVarietyClassifier | None = None) -> Detector:
     if path.suffix.lower() == ".onnx":
-        return OnnxYoloDetector(path, confidence)
+        return OnnxYoloDetector(path, confidence, variety=variety)
     return YoloDetector(str(path), 0.35 if confidence is None else confidence)
 
 
@@ -539,7 +647,7 @@ def get_detector() -> Detector:
     path = resolve_model_path(settings.oasis_model_path)
     if path.exists():
         try:
-            detector = load_yolo(path, settings.oasis_model_confidence)
+            detector = load_yolo(path, settings.oasis_model_confidence, load_variety_classifier(settings.oasis_variety_model_path))
             log.info("Detector em uso: %s (%s)", detector.version, path.name)
             return detector
         except Exception as exc:  # pragma: no cover - depende do ambiente
@@ -554,4 +662,5 @@ def get_detector() -> Detector:
 __all__ = [
     "ColorDetector", "OnnxYoloDetector", "YoloDetector", "MockDetector", "RawDetection", "DetectorOutput", "get_detector", "VARIETY_IDS",
     "check_model_classes", "to_raw_detections", "decode_yolo_output", "letterbox", "region_anomalies", "ColorThresholds",
+    "OnnxVarietyClassifier", "VarietyPrediction", "square_crop_box", "classify_input",
 ]

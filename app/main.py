@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from . import __version__
 from .config import DEFAULT_JWT_SECRET, get_settings
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, engine, ensure_columns
 from .routers import auth, imports, ingest, integrations, readings, sensors, stats, system, users
 from .seed import bootstrap_admin, seed_catalog
 from .services.detector import get_detector
@@ -34,6 +34,9 @@ async def lifespan(_: FastAPI):
     if settings.jwt_secret == DEFAULT_JWT_SECRET:
         log.warning("JWT_SECRET padrão em uso — aceitável só em desenvolvimento. Defina JWT_SECRET no .env.")
     Base.metadata.create_all(engine)
+    added = ensure_columns(engine)
+    if added:
+        log.info("Banco atualizado: colunas adicionadas %s", ", ".join(added))
     with SessionLocal() as db:
         try:
             seed_catalog(db)
