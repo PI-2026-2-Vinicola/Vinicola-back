@@ -26,8 +26,10 @@ class Settings(BaseSettings):
 
     # Detector: "auto" (YOLO se houver pesos, senão análise de cor), "color" ou "yolo".
     oasis_detector: str = "auto"
-    oasis_model_path: str = "models/oasis-grapes.pt"
-    oasis_model_confidence: float = 0.35
+    # Modelo ONNX + ficha (.json) gerados por ml/export_model.py, ou pesos Ultralytics (.pt).
+    oasis_model_path: str = "models/oasis-cachos.onnx"
+    # Confiança mínima das detecções. Vazio = limiar recomendado na ficha do modelo (0,35 para pesos .pt).
+    oasis_model_confidence: float | None = None
 
     # Fuso horário da propriedade (agrupamento de indicadores por dia local).
     oasis_timezone: str = "America/Recife"
@@ -83,6 +85,16 @@ class Settings(BaseSettings):
     def _jwt_secret(cls, v: str) -> str:
         # JWT_SECRET vazio no .env = segredo de desenvolvimento (a produção recusa esse valor).
         return v.strip() or DEFAULT_JWT_SECRET
+
+    @field_validator("oasis_model_confidence", mode="before")
+    @classmethod
+    def _confidence(cls, v):
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        value = float(v)
+        if not 0 < value < 1:
+            raise ValueError("OASIS_MODEL_CONFIDENCE deve estar entre 0 e 1 (ou vazio para usar o limiar da ficha do modelo).")
+        return value
 
     @field_validator("thingspeak_channel_id", "thingspeak_read_api_key", "embrapa_consumer_key", "embrapa_consumer_secret", "embrapa_book_id")
     @classmethod

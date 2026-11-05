@@ -389,9 +389,64 @@ class SystemStatus(CamelModel):
 
 # ------------------------------------------------------------------ análise de imagem (modelo em uso)
 class ModelClassOut(CamelModel):
-    name: str  # rótulo do modelo (ex.: syrah, podridao)
+    name: str  # rótulo do modelo (ex.: syrah, podridao, cacho)
     label: str  # rótulo apresentado ao usuário
-    kind: Literal["variedade", "anomalia_leve", "anomalia_grave"]
+    kind: Literal["cacho", "variedade", "anomalia_leve", "anomalia_grave"]
+    # Quem produz a classe: o modelo treinado ou a regra de análise de cor.
+    source: Literal["modelo", "analise_cor"] = "modelo"
+
+
+class AnalysisComponentOut(CamelModel):
+    """O que cada parte da análise decide e de onde vem a informação."""
+
+    item: str
+    source: str
+    kind: Literal["modelo", "cadastro", "regra"]
+
+
+class ModelMetricsOut(CamelModel):
+    split: str
+    images: int
+    instances: int
+    precision: float
+    recall: float
+    f1: float
+    map50: float
+    map50_95: float = Field(serialization_alias="map5095")
+    confidence: float
+
+
+class ModelDatasetOut(CamelModel):
+    name: str
+    source_url: str
+    version: str
+    license: str
+    license_url: str | None
+    institution: str
+    description: str
+    images: dict[str, int]
+    instances: dict[str, int]
+    varieties: list[str]
+    capture: str
+
+
+class ModelCardOut(CamelModel):
+    """Ficha do modelo em uso (models/<nome>.json), sem detalhes internos de treinamento."""
+
+    name: str
+    version: str
+    task: str
+    architecture: str
+    framework: str
+    input_size: int
+    trained_at: datetime
+    pretrained: bool
+    epochs: int | None
+    metrics: list[ModelMetricsOut]
+    dataset: ModelDatasetOut
+    license: str
+    inference_ms_cpu: float | None
+    sha256: str
 
 
 class AnalysisModelOut(CamelModel):
@@ -408,6 +463,8 @@ class AnalysisModelOut(CamelModel):
     accepted_formats: list[str]
     timeout_seconds: float
     limitations: list[str]
+    components: list[AnalysisComponentOut] = []
+    card: ModelCardOut | None = None
 
 
 # ------------------------------------------------------------------ integrações externas

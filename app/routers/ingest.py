@@ -15,14 +15,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from ..catalog import ANOMALY_TEXT, MILD_ANOMALIES, MODEL_CLASSES, VARIETIES, variety_from_class
+from ..catalog import ANOMALY_TEXT, GENERIC_CLUSTER_CLASS, MILD_ANOMALIES, MODEL_CLASSES, VARIETIES, variety_from_class
 from ..config import get_settings
 from ..database import get_db
 from ..deps import authorize_device, current_user, current_user_optional, device_token_header
 from ..models import EnvironmentReading, Reading, User, Variety
-from ..schemas import AnalysisModelOut, ModelClassOut, ReadingOut
+from ..schemas import AnalysisComponentOut, AnalysisModelOut, ModelCardOut, ModelClassOut, ModelDatasetOut, ModelMetricsOut, ReadingOut
 from ..services.classifier import ANOMALY_MIN_CONFIDENCE, analyze
-from ..services.detector import YoloDetector, get_detector
+from ..services.detector import ColorDetector, OnnxYoloDetector, YoloDetector, get_detector, resolve_model_path
 from ..services.readings import persist_reading, to_reading_out
 from ..services.storage import InvalidImage, image_file, load_image, save_image
 from ..services.timeutil import as_utc, utcnow
@@ -35,43 +35,96 @@ ACCEPTED_FORMATS = ["JPEG", "PNG", "WEBP"]
 VARIETY_NAME = {v["id"]: v["name"] for v in VARIETIES}
 
 
-def _class_out(label: str) -> ModelClassOut:
+def _class_out(label: str, source: str = "modelo") -> ModelClassOut:
+    if label == GENERIC_CLUSTER_CLASS:
+        return ModelClassOut(name=label, label="Cacho de uva", kind="cacho", source=source)
     variety = variety_from_class(label)
     if variety:
-        return ModelClassOut(name=label, label=VARIETY_NAME[variety], kind="variedade")
-    return ModelClassOut(name=label, label=ANOMALY_TEXT[label][0], kind="anomalia_leve" if label in MILD_ANOMALIES else "anomalia_grave")
+        return ModelClassOut(name=label, label=VARIETY_NAME[variety], kind="variedade", source=source)
+    return ModelClassOut(name=label, label=ANOMALY_TEXT[label][0], kind="anomalia_leve" if label in MILD_ANOMALIES else "anomalia_grave", source=source)
+
+
+def _card_out(detector: OnnxYoloDetector) -> ModelCardOut:
+    card = detector.card
+    order = {"test": 0, "val": 1}
+    return ModelCardOut(
+        name=card.name,
+        version=card.version,
+        task=card.task,
+        architecture=card.architecture,
+        framework=card.framework,
+        input_size=card.input_size,
+        trained_at=card.trained_at,
+        pretrained=card.pretrained,
+        epochs=card.training.get("epocas_executadas"),
+        metrics=[ModelMetricsOut(**m.model_dump()) for _, m in sorted(card.metrics.items(), key=lambda kv: order.get(kv[0], 9))],
+        dataset=ModelDatasetOut(**card.dataset.model_dump()),
+        license=card.license,
+        inference_ms_cpu=card.inference_ms_cpu,
+        sha256=card.sha256,
+    )
+
+
+COLOR_FALLBACK_LIMITS = [
+    "A análise de cor não reconhece a variedade: usa a variedade cadastrada no talhão do sensor.",
+    "Avaliada com fotos reais de campo (Embrapa WGISD), a caixa encontrada pela análise de cor não coincidiu com os cachos "
+    "anotados e as regras apontaram anomalias na maioria das fotos (ml/reports/calibracao_cor.json): use o modelo YOLO publicado.",
+]
 
 
 @router.get("/analysis/model", response_model=AnalysisModelOut, response_model_by_alias=True)
 def analysis_model(_: User = Depends(current_user)):
-    """Detector efetivamente em uso, classes que ele pode identificar e limites do envio de imagens."""
+    """Detector efetivamente em uso, o que ele identifica, de onde vem cada informação e os limites do envio de imagens."""
     settings = get_settings()
     detector = get_detector()
-    yolo = isinstance(detector, YoloDetector)
-    weights = Path(settings.oasis_model_path)
+    onnx = isinstance(detector, OnnxYoloDetector)
+    yolo = onnx or isinstance(detector, YoloDetector)
+    weights = detector.path if onnx else resolve_model_path(settings.oasis_model_path)
     found = weights.is_file()
-    limitations = []
-    if yolo:
+    limitations: list[str] = []
+    components: list[AnalysisComponentOut] = []
+    classes: list[ModelClassOut] = []
+    if onnx and detector.clusters_only:
+        limitations += detector.card.limitations
+        t = detector.thresholds
+        limitations.append(
+            "A análise de cor dentro dos cachos é uma regra calibrada para disparar raramente em cachos reais sem defeito anotado "
+            f"(manchas a partir de {t.brown_mild:.0%} da área, podridão a partir de {t.brown_severe:.0%}); a capacidade de "
+            "encontrar defeitos reais ainda não foi medida, por falta de fotos anotadas de cachos com defeito."
+        )
+        components = [
+            AnalysisComponentOut(item="Localização e contagem dos cachos", source=f"Modelo {detector.card.architecture} treinado ({detector.card.name} {detector.card.version})", kind="modelo"),
+            AnalysisComponentOut(item="Variedade", source="Cadastro do talhão do sensor (o modelo não identifica variedades)", kind="cadastro"),
+            AnalysisComponentOut(item="Manchas, mofo, maturação desigual e estágio de maturação", source="Análise de cor (regra) dentro de cada cacho detectado", kind="regra"),
+        ]
+        classes = [_class_out(GENERIC_CLUSTER_CLASS)] + [_class_out(c, "analise_cor") for c in detector.classes if c != GENERIC_CLUSTER_CLASS]
+    elif yolo:
         limitations += [
             "As classes e a precisão dependem das imagens anotadas usadas no treinamento (ml/README.md).",
-            f"Detecções com confiança abaixo de {settings.oasis_model_confidence:.2f} são descartadas pelo modelo.",
+            f"Detecções com confiança abaixo de {detector.confidence:.2f} são descartadas pelo modelo.",
         ]
+        components = [AnalysisComponentOut(item="Cachos, variedade e anomalias", source="Modelo YOLO treinado", kind="modelo")]
+        classes = [_class_out(c) for c in getattr(detector, "classes", []) if c in MODEL_CLASSES]
     else:
         if not found:
-            weights_note = f"Nenhum modelo YOLO treinado foi encontrado ({weights.name}): a detecção por YOLO é ativada quando os pesos forem adicionados."
+            weights_note = f"Nenhum modelo YOLO foi encontrado ({weights.name}): a detecção por YOLO é ativada quando o modelo for publicado em models/."
         elif settings.oasis_detector.lower() == "color":
-            weights_note = "O detector está fixado em análise de cor (OASIS_DETECTOR=color), embora exista um arquivo de pesos."
+            weights_note = "O detector está fixado em análise de cor (OASIS_DETECTOR=color), embora exista um modelo publicado."
         else:
-            weights_note = f"O arquivo de pesos {weights.name} existe, mas não pôde ser usado (consulte o log da API)."
-        limitations += [
-            "A análise de cor não reconhece a variedade: usa a variedade cadastrada no talhão do sensor.",
+            weights_note = f"O modelo {weights.name} existe, mas não pôde ser carregado (consulte o log da API)."
+        limitations += COLOR_FALLBACK_LIMITS + [
             "Depende de enquadramento e iluminação; em uvas brancas não distingue bagas verdes da folhagem.",
-            "Foi calibrada com imagens sintéticas e precisa ser ajustada com fotos de campo.",
             weights_note,
         ]
+        components = [
+            AnalysisComponentOut(item="Localização do cacho", source="Análise de cor (regra), sem modelo treinado", kind="regra"),
+            AnalysisComponentOut(item="Variedade", source="Cadastro do talhão do sensor", kind="cadastro"),
+            AnalysisComponentOut(item="Anomalias e maturação", source="Análise de cor (regra)", kind="regra"),
+        ]
+        classes = [_class_out(c, "analise_cor") for c in ColorDetector.classes if c in MODEL_CLASSES]
     limitations += [
         f"Anomalias com confiança abaixo de {ANOMALY_MIN_CONFIDENCE:.1f} não alteram a classificação.",
-        "O resultado é uma análise computacional da imagem, não um diagnóstico fitossanitário, e não substitui a avaliação de um responsável técnico.",
+        "O resultado é uma previsão computacional a partir da imagem, não um diagnóstico fitossanitário, e não substitui a avaliação de um responsável técnico.",
     ]
     return AnalysisModelOut(
         detector=detector.name,
@@ -80,13 +133,15 @@ def analysis_model(_: User = Depends(current_user)):
         yolo_loaded=yolo,
         yolo_weights_file=weights.name,
         yolo_weights_found=found,
-        classes=[_class_out(c) for c in getattr(detector, "classes", []) if c in MODEL_CLASSES],
-        confidence_threshold=settings.oasis_model_confidence if yolo else None,
+        classes=classes,
+        confidence_threshold=detector.confidence if yolo else None,
         anomaly_min_confidence=ANOMALY_MIN_CONFIDENCE,
         max_upload_mb=settings.max_upload_mb,
         accepted_formats=ACCEPTED_FORMATS,
         timeout_seconds=settings.oasis_analysis_timeout_seconds,
         limitations=limitations,
+        components=components,
+        card=_card_out(detector) if onnx else None,
     )
 
 

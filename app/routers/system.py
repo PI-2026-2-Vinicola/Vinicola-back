@@ -9,7 +9,7 @@ from ..config import get_settings
 from ..database import engine, get_db
 from ..models import AuditLog, EnvironmentReading, ImportJob, Reading, Sensor, User, Variety
 from ..schemas import AuditOut, AuditPage, PublicOverview, SystemStatus, VarietyOut
-from ..services.detector import YoloDetector, get_detector
+from ..services.detector import OnnxYoloDetector, YoloDetector, get_detector
 from ..services.sensors import status_counts
 from ..services.storage import storage_size_mb
 from ..services.timeutil import from_db, period_bounds
@@ -61,7 +61,7 @@ def system_status(db: Session = Depends(get_db), _: User = Depends(admin_only)):
         database=database,
         detector=detector.name,
         detector_description=detector.description,
-        model_loaded=isinstance(detector, YoloDetector),
+        model_loaded=isinstance(detector, (OnnxYoloDetector, YoloDetector)),
         timezone=settings.oasis_timezone,
         farm_name=settings.oasis_farm_name or None,
         public_read=settings.public_read,

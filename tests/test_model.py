@@ -23,7 +23,11 @@ def test_model_info_requires_login_and_describes_color_detector(client, operador
     assert kinds["syrah"] == "variedade" and kinds["mancha_leve"] == "anomalia_leve" and kinds["podridao"] == "anomalia_grave"
     assert "lesao" not in kinds  # a análise de cor não detecta lesões: só as classes que o detector produz
     assert info["maxUploadMb"] == 8 and info["acceptedFormats"] == ["JPEG", "PNG", "WEBP"] and info["timeoutSeconds"] == 30
-    assert any("Nenhum modelo YOLO treinado" in t for t in info["limitations"])
+    assert any("Nenhum modelo YOLO foi encontrado" in t for t in info["limitations"])
+    assert any("WGISD" in t for t in info["limitations"])  # limitação medida com fotos reais
+    assert info["card"] is None
+    assert {c["kind"] for c in info["components"]} == {"regra", "cadastro"}
+    assert {c["source"] for c in info["classes"]} == {"analise_cor"}
     assert any("não substitui" in t for t in info["limitations"])
 
 

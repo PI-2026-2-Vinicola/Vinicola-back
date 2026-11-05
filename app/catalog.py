@@ -53,15 +53,19 @@ ANOMALY_EMBRAPA_QUERY = {
     "baga_murcha": "bagas murchas",
     "lesao": "doenças fúngicas",
 }
+# Observações quando nenhuma anomalia é apontada. A análise da imagem não é um diagnóstico: o texto diz
+# apenas o que foi verificado (cores na região do cacho), sem afirmar que as bagas estão sadias.
 GOOD_OBSERVATIONS = (
-    "Cacho uniforme, coloração compatível com a variedade e sem sinais visuais de dano.",
-    "Bagas íntegras e maturação homogênea no cacho.",
-    "Características visuais dentro dos parâmetros esperados para a variedade.",
-    "Cacho bem formado, bagas túrgidas e sem manchas aparentes.",
+    "Nenhum sinal visual de dano foi apontado pela análise da imagem.",
+    "A análise da imagem não apontou manchas, mofo ou bagas fora de cor no cacho.",
+    "Sem indícios visuais de defeito na imagem analisada; mantenha o acompanhamento em campo.",
 )
 
 # Todas as classes do modelo YOLO, na ordem do dataset (ml/dataset.yaml).
 MODEL_CLASSES = [yolo_class(v) for v in VARIETY_IDS] + list(MILD_ANOMALIES) + list(SEVERE_ANOMALIES)
+# Classe única do modelo de detecção de cachos treinado com o Embrapa WGISD (ml/README.md): o cacho é
+# localizado pelo modelo, sem identificar a variedade.
+GENERIC_CLUSTER_CLASS = "cacho"
 
 MATURATION_LABEL = {
     "desenvolvimento": "Em desenvolvimento",

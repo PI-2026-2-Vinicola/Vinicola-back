@@ -29,7 +29,7 @@ from ..schemas import (
     ThingSpeakFeedOut,
 )
 from ..services.classifier import ANOMALY_MIN_CONFIDENCE
-from ..services.detector import YoloDetector, get_detector
+from ..services.detector import OnnxYoloDetector, YoloDetector, get_detector
 from ..services.embrapa import EmbrapaService, get_embrapa, strongest_anomalies
 from ..services.external import RateLimiter
 from ..services.thingspeak import ThingSpeakService, get_thingspeak
@@ -54,11 +54,18 @@ limited = [Depends(embrapa_rate_limit)]
 @router.get("/public/integrations", response_model=IntegrationsStatus, response_model_by_alias=True)
 def integrations_status(ts: ThingSpeakService = Depends(get_thingspeak), em: EmbrapaService = Depends(get_embrapa)):
     """Situação das integrações (sem identificadores nem credenciais), usada pelas páginas públicas."""
-    yolo = isinstance(get_detector(), YoloDetector)
-    detector = IntegrationState(
-        configured=True,
-        detail="Modelo YOLO treinado em uso." if yolo else "Análise de cor em uso; nenhum modelo YOLO treinado foi carregado.",
-    )
+    current = get_detector()
+    yolo = isinstance(current, (OnnxYoloDetector, YoloDetector))
+    if isinstance(current, OnnxYoloDetector) and current.clusters_only:
+        detail = (
+            f"Modelo {current.card.architecture} ({current.card.name} {current.card.version}) treinado com fotos reais do "
+            f"{current.card.dataset.name} localiza os cachos; variedade do cadastro do talhão e anomalias pela análise de cor."
+        )
+    elif yolo:
+        detail = "Modelo YOLO treinado em uso."
+    else:
+        detail = "Análise de cor em uso; nenhum modelo YOLO treinado foi carregado."
+    detector = IntegrationState(configured=True, detail=detail)
     return IntegrationsStatus(thingspeak=ts.status(), embrapa=em.status(), detector=detector, yolo_loaded=yolo)
 
 
