@@ -7,6 +7,7 @@ Comandos administrativos da OASIS.
     python -m app.cli check-integrations         # testa ThingSpeak e Embrapa com chamadas reais
     python -m app.cli seed-demo [--days 30]     # dados SINTÉTICOS marcados como demonstração
     python -m app.cli clear-demo
+    python -m app.cli export-dataset --out ml/datasets/oasis-campo   # fotos reais + pré-anotações para Label Studio/CVAT
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+from pathlib import Path
 
 from .config import get_settings
 from .database import Base, SessionLocal, engine
@@ -113,6 +115,12 @@ def main(argv: list[str] | None = None) -> None:
     d = sub.add_parser("seed-demo", help="Gera dados SINTÉTICOS de demonstração (marcados como tal)")
     d.add_argument("--days", type=int, default=30)
     sub.add_parser("clear-demo", help="Remove os dados de demonstração")
+    e = sub.add_parser("export-dataset", help="Exporta as fotos de campo com pré-anotações para revisão (Label Studio/CVAT)")
+    e.add_argument("--out", type=Path, default=Path("ml/datasets/oasis-campo"))
+    e.add_argument("--since", help="data inicial (AAAA-MM-DD)")
+    e.add_argument("--sensor", help="somente um sensor")
+    e.add_argument("--limit", type=int)
+    e.add_argument("--image-prefix", default="/data/local-files/?d=", help="prefixo das imagens nas tarefas do Label Studio")
     args = parser.parse_args(argv)
 
     if args.command == "check-integrations":
@@ -157,6 +165,22 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit(str(exc))
             print(f"{n} leituras de DEMONSTRAÇÃO criadas nos sensores DEMO-01..03 (origem 'demonstracao').")
             print("Remova com: python -m app.cli clear-demo")
+        elif args.command == "export-dataset":
+            from datetime import date, datetime, time, timezone
+
+            from .annotation_export import export_dataset
+
+            since = None
+            if args.since:
+                try:
+                    since = datetime.combine(date.fromisoformat(args.since), time.min, tzinfo=timezone.utc)
+                except ValueError:
+                    sys.exit("Use --since no formato AAAA-MM-DD.")
+            result = export_dataset(db, args.out, since=since, sensor_id=args.sensor, limit=args.limit, image_prefix=args.image_prefix)
+            print(f"{result['images']} imagens e {result['pre_annotations']} pré-anotações exportadas para {result['out']}")
+            if result["missing_files"]:
+                print(f"{result['missing_files']} leituras sem o arquivo de imagem no armazenamento foram ignoradas.")
+            print("Revise as pré-anotações no Label Studio ou no CVAT antes de treinar (ml/README.md).")
         elif args.command == "clear-demo":
             from .demo import clear_demo
 
