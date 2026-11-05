@@ -1,0 +1,122 @@
+{
+  "name": "OASIS Cachos",
+  "version": "1.0.0",
+  "task": "deteccao_cachos",
+  "architecture": "YOLO26n",
+  "framework": "Ultralytics 8.4.202 · PyTorch 2.15.0 → ONNX (opset 17) · ONNX Runtime 1.31.1",
+  "input_size": 640,
+  "classes": [
+    "cacho"
+  ],
+  "confidence_threshold": 0.29,
+  "iou_threshold": 0.7,
+  "trained_at": "2026-11-05T17:33:40+00:00",
+  "training": {
+    "pesos_iniciais": "yolo26n.yaml",
+    "epocas_solicitadas": 150,
+    "epocas_executadas": 150,
+    "melhor_epoca": 127,
+    "paciencia": 40,
+    "imgsz": 640,
+    "batch": 16,
+    "otimizador": "auto",
+    "lr0": 0.01,
+    "cos_lr": true,
+    "semente": 42,
+    "aumentos": {
+      "hsv_h": 0.015,
+      "hsv_s": 0.5,
+      "hsv_v": 0.4,
+      "degrees": 5.0,
+      "translate": 0.1,
+      "scale": 0.5,
+      "fliplr": 0.5,
+      "flipud": 0.0,
+      "mosaic": 1.0,
+      "mixup": 0.0,
+      "close_mosaic": 10
+    },
+    "dispositivo": "cpu",
+    "metricas_ultralytics_teste": {
+      "precision": 0.8492,
+      "recall": 0.7486,
+      "f1": 0.7957,
+      "map50": 0.852,
+      "map50_95": 0.4937
+    }
+  },
+  "metrics": {
+    "val": {
+      "split": "validação",
+      "images": 37,
+      "instances": 512,
+      "precision": 0.7672,
+      "recall": 0.7402,
+      "f1": 0.7535,
+      "map50": 0.8075,
+      "map50_95": 0.4735,
+      "confidence": 0.29
+    },
+    "test": {
+      "split": "teste",
+      "images": 58,
+      "instances": 850,
+      "precision": 0.786,
+      "recall": 0.7388,
+      "f1": 0.7617,
+      "map50": 0.83,
+      "map50_95": 0.4807,
+      "confidence": 0.29
+    }
+  },
+  "dataset": {
+    "name": "Embrapa WGISD",
+    "source_url": "https://github.com/thsant/wgisd",
+    "version": "6910edc5ae3aae8c20062941b1641821f0c30127",
+    "license": "CC BY-NC-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+    "institution": "Embrapa Informática Agropecuária",
+    "description": "Fotografias de campo de cachos de uva para vinho com caixas anotadas manualmente (Wine Grape Instance Segmentation Dataset).",
+    "images": {
+      "train": 205,
+      "val": 37,
+      "test": 58,
+      "total": 300
+    },
+    "instances": {
+      "train": 3067,
+      "val": 512,
+      "test": 850,
+      "total": 4429
+    },
+    "varieties": [
+      "Cabernet Franc",
+      "Cabernet Sauvignon",
+      "Chardonnay",
+      "Sauvignon Blanc",
+      "Syrah"
+    ],
+    "capture": "Vinícola Guaspari, Espírito Santo do Pinhal-SP · 27/04/2017 (Syrah) e 27/04/2018 · Canon EOS REBEL T3i e Motorola Moto Z2 Play"
+  },
+  "sha256": "c01ec6e8615fef072da72cd2f3df7cdab19760c1bbf895232fbd1cde2dfe8439",
+  "license": "Uso não comercial, com atribuição: pesos derivados do Embrapa WGISD (CC BY-NC-SA 4.0).",
+  "limitations": [
+    "Treinado somente com as 300 fotos do Embrapa WGISD: uma única propriedade (Vinícola Guaspari, Espírito Santo do Pinhal-SP), duas datas e duas câmeras.",
+    "Localiza cachos de uva. Não identifica a variedade nem diagnostica doenças, qualidade ou maturação — esses itens vêm do cadastro do talhão e da análise de cor, que é uma regra, não um modelo treinado.",
+    "Ainda não foi avaliado com fotos do Vale do São Francisco nem das câmeras ESP32-CAM da OASIS; o desempenho pode cair até que imagens locais sejam anotadas e incluídas no treino.",
+    "Treinado do zero (sem pesos pré-treinados).",
+    "Detecções com confiança abaixo de 0,29 são descartadas (limiar de maior F1 na validação).",
+    "Uso não comercial: os pesos derivam do WGISD (CC BY-NC-SA 4.0); citar a Embrapa e os autores do dataset."
+  ],
+  "pretrained": false,
+  "end2end": true,
+  "color_thresholds": {
+    "brown_mild": 0.3126,
+    "brown_severe": 0.6252,
+    "mold": 0.05,
+    "off_color": 0.1,
+    "target_rate": 0.02,
+    "report": "ml/reports/calibracao_cor.json"
+  },
+  "inference_ms_cpu": 59.0
+}

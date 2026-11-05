@@ -13,7 +13,7 @@ Tudo o que aparece aqui está implementado no repositório. Os números vêm dos
 ## Resumo
 
 - **Fonte das imagens:** **Embrapa WGISD** (Wine Grape Instance Segmentation Dataset), da Embrapa Informática Agropecuária. São 300 fotografias reais de campo, com 4.430 cachos anotados manualmente por caixas, de cinco variedades. As APIs da AgroAPI que a plataforma já usa (RespondeAgro e Agritec) fornecem texto e dados agronômicos, **não imagens rotuladas**.
-- **Modelo:** **YOLO26n** treinado com o WGISD para **localizar cachos de uva** (classe única `cacho`). Ele é exportado para ONNX e roda na API com o ONNX Runtime.
+- **Modelo:** **YOLO26n** treinado com o WGISD para **localizar cachos de uva** (classe única `cacho`). Ele é exportado para ONNX e roda na API com o ONNX Runtime. No teste oficial do WGISD, que o modelo nunca viu, atingiu **mAP50 de 0,83**, precisão de 78,6% e recall de 73,9%, com cerca de 60 ms por foto em CPU.
 - **Na aplicação:** a foto enviada vai para `POST /api/v1/ingest`. Lá, o YOLO localiza os cachos. A variedade vem do cadastro do talhão. A análise de cor examina cada cacho e aponta manchas, mofo e bagas fora de cor. O resultado é exibido como **previsão do modelo**, com a origem de cada informação.
 - **Limite honesto:** nenhuma fonte da Embrapa acessível traz rótulos de **qualidade, doença ou dano**. O WGISD cobre só **duas** das seis variedades do catálogo (Cabernet Sauvignon e Syrah). Por isso **não foi treinado** um modelo de qualidade nem de variedade. A seção 10 traz o plano para o dataset próprio, e as ferramentas desse plano já estão implementadas.
 
@@ -171,7 +171,45 @@ O relatório e os metadados versionados ficam em `ml/reports/wgisd-cachos/`.
 - Aumentos de dados e um modelo pequeno ajudam a conter o sobreajuste.
 - As métricas da ficha são medidas com o **mesmo código de inferência da API** (ONNX, `letterbox`, `decode_yolo_output`). O Ultralytics também é rodado no teste, para comparação e gráficos.
 
-<!-- RESULTADOS -->
+### 5.4 Resultados
+
+O treino rodou as 150 épocas (2,7 h em CPU). A melhor época pela validação foi a **127**. O limiar de confiança escolhido na validação, pelo maior F1, foi **0,29**.
+
+**Métricas com o pipeline de inferência da API** (ONNX Runtime, IoU 0,5 para precisão, recall e F1):
+
+| Conjunto | Imagens | Cachos | Precisão | Recall | F1 | mAP50 | mAP50-95 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Validação | 37 | 512 | 76,7% | 74,0% | 75,3% | 0,807 | 0,473 |
+| **Teste (oficial do WGISD)** | 58 | 850 | **78,6%** | **73,9%** | **76,2%** | **0,830** | **0,481** |
+
+**Matriz de confusão no teste** (uma classe, cacho × fundo, limiar 0,29):
+
+| | Cacho real | Fundo (sem cacho anotado) |
+| --- | --- | --- |
+| **Previsto como cacho** | 628 verdadeiros positivos | 171 falsos positivos |
+| **Não previsto** | 222 falsos negativos (cachos perdidos) | — |
+
+Parte dos "falsos positivos" pode ser de cachos distantes no fundo: o WGISD não anota esses cachos, conforme o datasheet. Os gráficos do Ultralytics (matriz de confusão e curvas P, R, F1 e PR) estão em `ml/reports/oasis-cachos/`.
+
+**Teste por variedade:**
+
+| Variedade | Imagens | Cachos | Precisão | Recall | F1 | mAP50 | mAP50-95 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Cabernet Franc | 10 | 159 | 79,5% | 75,5% | 77,4% | 0,850 | 0,502 |
+| Cabernet Sauvignon | 9 | 111 | 68,0% | 61,3% | 64,5% | 0,681 | 0,323 |
+| Chardonnay | 15 | 180 | 80,8% | 79,4% | 80,1% | 0,868 | 0,558 |
+| Sauvignon Blanc | 14 | 283 | 80,1% | 75,3% | 77,6% | 0,845 | 0,491 |
+| Syrah | 10 | 117 | 80,0% | 71,8% | 75,7% | 0,837 | 0,483 |
+
+Cabernet Sauvignon é a variedade mais difícil para o modelo (mAP50 de 0,68). As demais ficam entre 0,84 e 0,87.
+
+**Comparações e verificações:**
+- **Ultralytics, com os pesos PyTorch, no mesmo teste:** precisão 84,9%, recall 74,9%, F1 79,6%, mAP50 0,852 e mAP50-95 0,494. A diferença para o ONNX vem do pré-processamento: o Ultralytics usa letterbox retangular, e a API, entrada quadrada fixa de 640 × 640.
+- **Paridade entre ONNX e PyTorch:** 86,2% das caixas do PyTorch têm par no ONNX, com IoU médio de 0,912.
+- **Tempo de inferência na API (CPU, 4 núcleos):** mediana de 59 ms e p95 de 73 ms por foto.
+- **Sobreajuste:** o desempenho no teste (0,830) ficou próximo do da validação (0,807). Isso indica que o modelo generaliza para fotos novas **do mesmo vinhedo**. A generalização para o Vale do São Francisco ainda precisa ser medida (seção 10).
+- **Onde está o modelo:** `models/oasis-cachos.onnx` (9,8 MB) e a ficha `models/oasis-cachos.json`. O relatório completo está em `ml/reports/oasis-cachos/avaliacao.json`.
+
 
 ## 6. Análise de cor medida com dados reais
 
@@ -252,7 +290,53 @@ Respostas de erro:
 | 504 | tempo limite excedido |
 | 503 | falha do detector; nada é gravado |
 
-<!-- EXEMPLO_RESPOSTA -->
+Resposta **real** (201) ao enviar a foto de teste `tests/fixtures/wgisd/SYH_2017-04-27_1318.jpg` para um sensor de Syrah. O modelo encontrou 7 dos 8 cachos anotados. A lista de detecções foi abreviada aqui:
+
+```json
+{
+  "id": "OA-00001",
+  "sensorId": "S-001",
+  "capturedAt": "2026-11-05T12:30:00Z",
+  "varietyId": "syrah",
+  "quality": "boa",
+  "confidence": 0.848,
+  "maturation": "nao_informada",
+  "visualCondition": "Boa",
+  "classification": "APROVADA",
+  "observations": "Nenhum sinal visual de dano foi apontado pela análise da imagem.",
+  "detections": [
+    {
+      "kind": "cacho",
+      "label": "syrah",
+      "confidence": 0.848,
+      "box": [
+        0.0731,
+        0.053,
+        0.0723,
+        0.2427
+      ]
+    },
+    {
+      "kind": "cacho",
+      "label": "syrah",
+      "confidence": 0.801,
+      "box": [
+        0.3585,
+        0.5914,
+        0.0923,
+        0.2253
+      ]
+    },
+    …
+  ],
+  "clustersDetected": 7,
+  "imageUrl": "/api/v1/readings/OA-00001/image",
+  "source": "upload",
+  "modelVersion": "YOLO cachos · OASIS Cachos 1.0.0 + OASIS análise de cor v1",
+  "processingMs": 141
+}
+```
+
 
 **`GET /api/v1/analysis/model`** (autenticado) devolve:
 - o detector em uso;

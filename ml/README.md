@@ -19,7 +19,7 @@ A documentação completa está em [`docs/yolo-embrapa.md`](../docs/yolo-embrapa
 | Detecta | **cachos de uva** (classe única `cacho`) |
 | Dados | 300 fotos reais de campo do **Embrapa WGISD** (Embrapa Informática Agropecuária), 4.430 cachos anotados manualmente |
 | Não faz | não identifica a variedade, não diagnostica doença ou qualidade e não estima maturação. A variedade vem do cadastro do talhão. Anomalias e maturação vêm da análise de cor dentro de cada cacho detectado. |
-| Métricas | medidas no teste oficial do WGISD com o mesmo código da API: veja a ficha (`metrics`) e `ml/reports/oasis-cachos/avaliacao.json` |
+| Métricas (teste oficial do WGISD, código da API) | precisão 78,6% · recall 73,9% · F1 76,2% · **mAP50 0,830** · mAP50-95 0,481 · cerca de 59 ms por foto em CPU (`ml/reports/oasis-cachos/avaliacao.json`) |
 | Licença | uso **não comercial**, com atribuição. Os pesos derivam do WGISD, que é CC BY-NC 4.0. |
 
 ## Ambiente
