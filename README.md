@@ -104,6 +104,7 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | `OASIS_DETECTOR` | `auto` | `auto` (YOLO se o modelo existir, senão cor), `color` ou `yolo` |
 | `OASIS_MODEL_PATH` | `models/oasis-cachos.onnx` | Modelo ONNX + ficha `.json` (ou pesos Ultralytics `.pt`). Um `.env` antigo com `models/oasis-grapes.pt` usa o modelo publicado |
 | `OASIS_MODEL_CONFIDENCE` | vazio | Confiança mínima das detecções; vazio = limiar recomendado na ficha (escolhido na validação) |
+| `OASIS_VARIETY_MODEL_PATH` | `models/oasis-variedades.onnx` | Classificador YOLO de variedades pela foto (+ ficha `.json`); vazio = sem previsão de variedade |
 | `OASIS_TIMEZONE` | `America/Recife` | Fuso usado nos filtros e gráficos por dia/hora |
 | `OASIS_FARM_NAME` | vazio | Nome da propriedade exibido no painel |
 | `STORAGE_DIR` | `storage` | Pasta das imagens e miniaturas |

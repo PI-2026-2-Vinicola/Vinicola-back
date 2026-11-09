@@ -15,7 +15,8 @@ Tudo o que aparece aqui está implementado no repositório. Os números vêm dos
 - **Fonte das imagens:** **Embrapa WGISD** (Wine Grape Instance Segmentation Dataset), da Embrapa Informática Agropecuária. São 300 fotografias reais de campo, com 4.430 cachos anotados manualmente por caixas, de cinco variedades. As APIs da AgroAPI que a plataforma já usa (RespondeAgro e Agritec) fornecem texto e dados agronômicos, **não imagens rotuladas**.
 - **Modelo:** **YOLO26n** treinado com o WGISD para **localizar cachos de uva** (classe única `cacho`). Ele é exportado para ONNX e roda na API com o ONNX Runtime. No teste oficial do WGISD, que o modelo nunca viu, atingiu **mAP50 de 0,83**, precisão de 78,6% e recall de 73,9%, com cerca de 60 ms por foto em CPU.
 - **Na aplicação:** a foto enviada vai para `POST /api/v1/ingest`. Lá, o YOLO localiza os cachos. A variedade vem do cadastro do talhão. A análise de cor examina cada cacho e aponta manchas, mofo e bagas fora de cor. O resultado é exibido como **previsão do modelo**, com a origem de cada informação.
-- **Limite honesto:** nenhuma fonte da Embrapa acessível traz rótulos de **qualidade, doença ou dano**. O WGISD cobre só **duas** das seis variedades do catálogo (Cabernet Sauvignon e Syrah). Por isso **não foi treinado** um modelo de qualidade nem de variedade. A seção 10 traz o plano para o dataset próprio, e as ferramentas desse plano já estão implementadas.
+- **Variedade pela foto:** um classificador **YOLO26n-cls** examina cada cacho detectado e prevê a variedade entre as 5 do WGISD. No teste, acertou **98,3% das fotos** (57 de 58) e 93,7% dos cachos (seção 5.5). A variedade oficial da leitura continua sendo a do talhão, e a tela compara as duas.
+- **Limite honesto:** nenhuma fonte da Embrapa acessível traz rótulos de **qualidade, doença ou dano**, então **não foi treinado** um modelo de qualidade. O classificador de variedades só conhece Cabernet Franc, Cabernet Sauvignon, Chardonnay, Sauvignon Blanc e Syrah, e foi treinado com um único vinhedo. A seção 10 traz o plano para o dataset próprio, e as ferramentas desse plano já estão implementadas.
 
 ## 1. Fontes de dados da Embrapa
 
@@ -128,7 +129,7 @@ O relatório e os metadados versionados ficam em `ml/reports/wgisd-cachos/`.
 | **Detecção de cachos** | 4.430 caixas manuais em 300 fotos reais | **Implementado**, com a classe `cacho` |
 | Detecção de bagas ou frutos | Pontos de bagas (contribuições: 187.374 em 300 imagens), sem caixas | Não implementado. É uma evolução possível para contar bagas. |
 | Segmentação de cachos | Máscaras de 2.020 cachos | Não usada no modelo, e sim para medir a análise de cor (seção 6) |
-| Identificação da variedade | Um rótulo por **imagem**, de um único vinhedo, com duas datas e duas câmeras. Só 2 das 6 variedades do catálogo. | **Não implementado.** Cada variedade foi fotografada num único dia, então o modelo aprenderia o dia, a luz e a câmera em vez da variedade. E 4 variedades do catálogo ficariam de fora. A variedade continua vindo do cadastro do talhão. |
+| Identificação da variedade | Variedade por **foto**, aplicada a cada cacho anotado (4.202 recortes, 5 variedades, um vinhedo, duas datas, duas câmeras). Só 2 das 6 variedades do catálogo. | **Implementado como previsão** (seção 5.5): classificador YOLO26n-cls sobre os recortes dos cachos detectados. A variedade oficial continua sendo a do talhão, e a tela compara as duas. Riscos medidos e declarados: data e vinhedo únicos por variedade; 4 variedades do catálogo ficam de fora. |
 | Qualidade, deterioração, doenças, danos, regiões problemáticas | Nenhum rótulo, nem no WGISD nem nas APIs | **Não implementado como modelo** (seção 10). A aplicação mantém a análise de cor, calibrada com cachos reais e apresentada como regra. |
 
 ## 4. Anotação
@@ -210,6 +211,58 @@ Cabernet Sauvignon é a variedade mais difícil para o modelo (mAP50 de 0,68). A
 - **Sobreajuste:** o desempenho no teste (0,830) ficou próximo do da validação (0,807). Isso indica que o modelo generaliza para fotos novas **do mesmo vinhedo**. A generalização para o Vale do São Francisco ainda precisa ser medida (seção 10).
 - **Onde está o modelo:** `models/oasis-cachos.onnx` (9,8 MB) e a ficha `models/oasis-cachos.json`. O relatório completo está em `ml/reports/oasis-cachos/avaliacao.json`.
 
+
+### 5.5 Classificador de variedades (YOLO26n-cls)
+
+O detector localiza os cachos. Um segundo modelo YOLO, de **classificação**, olha o recorte de cada cacho e diz a variedade, entre as cinco do WGISD. A previsão da foto é a votação dos cachos, ponderada pela confiança de cada detecção.
+
+- **Dados:** recortes quadrados de cada cacho anotado, com 10% de margem e o mesmo recorte usado pela API (`square_crop_box`). Cachos com lado menor que 48 px, os distantes, ficam de fora. As divisões são **por foto**, iguais às do detector, então recortes da mesma foto nunca caem em treino e teste ao mesmo tempo. O resultado são 2.906 recortes de treino, 489 de validação e 807 de teste (`ml/prepare_variety_dataset.py`, `ml/reports/wgisd-variedades/recortes.json`).
+- **Treino** (`ml/train_variety.py`): transfer learning a partir de `yolo26n-cls.pt`, com pesos ImageNet do release oficial da Ultralytics.
+  - Configuração: 224 px, lote 64, AdamW automático e LR cosseno.
+  - Aumentos: cor fraca (hsv_h 0,005, porque a cor da baga é informação da variedade), espelhamento horizontal, rotação de ±10°, escala de ±30% e apagamento aleatório.
+  - Paciência de 15 épocas. Rodaram 44 épocas (1,1 h em CPU), e a melhor foi a 29.
+- **Validação:** acurácia de 93,5% nos recortes.
+
+**Resultados no teste** (807 cachos de 58 fotos, com o pipeline de inferência da API):
+
+| | Valor |
+| --- | --- |
+| Acurácia por cacho | **93,7%** (balanceada: 93,9%) |
+| Acurácia **por foto** (fluxo completo: detector → recortes → votação) | **98,3%**: 57 de 58 fotos |
+| Único erro por foto | `CDY_2051` (Chardonnay) prevista como Cabernet Sauvignon, com 60% de confiança |
+
+| Variedade | Cachos | Precisão | Recall | F1 | Acerto por foto |
+| --- | --- | --- | --- | --- | --- |
+| Cabernet Franc | 155 | 94,9% | 95,5% | 95,2% | 100,0% (10 fotos) |
+| Cabernet Sauvignon | 110 | 85,5% | 96,4% | 90,6% | 100,0% (9 fotos) |
+| Chardonnay | 169 | 92,6% | 88,8% | 90,6% | 93,3% (15 fotos) |
+| Sauvignon Blanc | 256 | 95,3% | 94,1% | 94,7% | 100,0% (14 fotos) |
+| Syrah | 117 | 99,1% | 94,9% | 96,9% | 100,0% (10 fotos) |
+
+Matriz de confusão por cacho no teste (linhas: verdadeira; colunas: prevista, na ordem das linhas). O gráfico está em `ml/reports/oasis-variedades/confusion_matrix_teste.png`.
+
+| | Cabernet Franc | Cabernet Sauvignon | Chardonnay | Sauvignon Blanc | Syrah |
+| --- | --- | --- | --- | --- | --- |
+| **Cabernet Franc** | 148 | 3 | 0 | 4 | 0 |
+| **Cabernet Sauvignon** | 2 | 106 | 1 | 1 | 0 |
+| **Chardonnay** | 0 | 14 | 150 | 5 | 0 |
+| **Sauvignon Blanc** | 2 | 1 | 11 | 241 | 1 |
+| **Syrah** | 4 | 0 | 0 | 2 | 111 |
+
+A confusão mais comum é entre as **brancas** (Chardonnay e Sauvignon Blanc) e de Chardonnay com Cabernet Sauvignon. Isso é compatível com cachos tintos ainda verdes nas fotos.
+
+**Verificação de atalho:** se o modelo tivesse aprendido a câmera em vez da uva, o acerto despencaria numa delas. Não foi o que aconteceu: 93,1% nas fotos da Canon (681 cachos) e 96,8% nas do Motorola (126 cachos).
+
+O que **não** dá para descartar com estes dados:
+- Cada variedade foi fotografada num único dia e num único vinhedo. Parte do acerto pode vir das condições daquele dia, como luz, estágio e manejo.
+- O desempenho real com fotos do Vale do São Francisco precisa ser medido com fotos locais anotadas (seção 10).
+
+**Limites de uso, que também aparecem na interface:**
+- O modelo conhece só 5 variedades e sempre escolhe uma delas. Para Tempranillo, Touriga Nacional, Chenin Blanc ou Moscato Canelli, a previsão será errada por construção.
+- A variedade oficial da leitura continua sendo a do talhão (`variety_id`). A previsão fica em `predicted_variety` e `variety_confidence`.
+- A tela compara as duas e avisa quando elas **conferem**, quando **divergem**, quando a previsão está **fora do catálogo** ou quando tem **baixa confiança** (menos de 50%).
+- O modelo está publicado em `models/oasis-variedades.onnx` (6,2 MB) e na ficha `.json`.
+- Para trocar ou desligar o modelo: `OASIS_VARIETY_MODEL_PATH` (vazio = sem previsão de variedade).
 
 ## 6. Análise de cor medida com dados reais
 
@@ -366,7 +419,7 @@ Resposta **real** (201) ao enviar a foto de teste `tests/fixtures/wgisd/SYH_2017
 Na página **Análises → Enviar foto** e na página de cada leitura:
 
 - **Cachos identificados:** caixas sobre a foto, quantidade e confiança do modelo por cacho, com o selo "Modelo YOLO".
-- **Variedade:** "Variedade (cadastro do talhão)", porque o modelo não identifica variedades. Aparecem também as características da variedade no catálogo.
+- **Variedade:** o título mostra "Talhão de …", com a variedade do cadastro. O bloco **"Variedade pela foto · previsão do modelo"** mostra a variedade prevista pelo classificador e a probabilidade, com o aviso "Confere com o talhão", "Diferente do talhão — vale conferir em campo", "Variedade fora do catálogo" ou "Baixa confiança".
 - **Possíveis problemas:** manchas, mofo e bagas fora de cor, com o selo "Análise de cor". O índice da regra é mostrado como índice, e não como probabilidade.
 - **Avaliação visual:** qualidade (Boa, Atenção ou Necessita atenção), condição visual e maturação, ou "não informada" quando a cor não permite estimar.
 - **Recomendações:** respostas da Embrapa (RespondeAgro) para cada anomalia apontada, quando as credenciais da AgroAPI estão configuradas.

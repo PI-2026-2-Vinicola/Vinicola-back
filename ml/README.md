@@ -18,7 +18,8 @@ A documentação completa está em [`docs/yolo-embrapa.md`](../docs/yolo-embrapa
 | Modelo | `models/oasis-cachos.onnx` + ficha `models/oasis-cachos.json` (YOLO26n, entrada 640 × 640) |
 | Detecta | **cachos de uva** (classe única `cacho`) |
 | Dados | 300 fotos reais de campo do **Embrapa WGISD** (Embrapa Informática Agropecuária), 4.430 cachos anotados manualmente |
-| Não faz | não identifica a variedade, não diagnostica doença ou qualidade e não estima maturação. A variedade vem do cadastro do talhão. Anomalias e maturação vêm da análise de cor dentro de cada cacho detectado. |
+| Variedade | `models/oasis-variedades.onnx` (YOLO26n-cls) classifica cada cacho detectado entre 5 variedades do WGISD. Teste: **98,3% das fotos** e 93,7% dos cachos (`ml/reports/oasis-variedades/avaliacao.json`). |
+| Não faz | não diagnostica doença ou qualidade e não estima maturação: anomalias e maturação vêm da análise de cor dentro de cada cacho detectado. Não reconhece Tempranillo, Touriga Nacional, Chenin Blanc nem Moscato Canelli. |
 | Métricas (teste oficial do WGISD, código da API) | precisão 78,6% · recall 73,9% · F1 76,2% · **mAP50 0,830** · mAP50-95 0,481 · cerca de 59 ms por foto em CPU (`ml/reports/oasis-cachos/avaliacao.json`) |
 | Licença | uso **não comercial**, com atribuição. Os pesos derivam do WGISD, que é CC BY-NC 4.0. |
 
@@ -71,6 +72,14 @@ Para trocar o modelo em uso, basta publicar um novo par `.onnx` + `.json`, sem m
 ```bash
 python ml/predict.py foto.jpg --variety syrah           # mesmo resultado que a API produziria
 python ml/predict.py foto.jpg --variety syrah --color   # só a análise de cor, para comparação
+```
+
+## Classificador de variedades
+
+```bash
+python ml/prepare_variety_dataset.py                 # recortes dos cachos por variedade (mesmas divisões por foto)
+python ml/train_variety.py                           # YOLO26n-cls a partir de yolo26n-cls.pt (ImageNet)
+python ml/export_variety.py --run ml/runs/oasis-variedades   # ONNX + ficha + avaliação por cacho, por foto e por câmera
 ```
 
 ## Dataset próprio (qualidade, doenças e variedades do Vale)

@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from .config import get_settings
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, engine, ensure_columns
 from .models import User
 from .schemas import UserCreateIn, check_password
 from .security import hash_secret
@@ -127,6 +127,7 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1 if check_integrations() else 0)
 
     Base.metadata.create_all(engine)
+    ensure_columns(engine)
     with SessionLocal() as db:
         seed_catalog(db)
         if args.command == "create-user":

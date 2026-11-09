@@ -1,0 +1,41 @@
+{
+  "fonte": "ml/datasets/wgisd-cachos",
+  "classes": [
+    "cabernet_franc",
+    "cabernet_sauvignon",
+    "chardonnay",
+    "sauvignon_blanc",
+    "syrah"
+  ],
+  "lado_minimo_px": 48,
+  "recortes_por_divisao": {
+    "train": {
+      "cabernet_franc": 742,
+      "cabernet_sauvignon": 445,
+      "chardonnay": 542,
+      "sauvignon_blanc": 792,
+      "syrah": 385
+    },
+    "val": {
+      "cabernet_franc": 108,
+      "cabernet_sauvignon": 82,
+      "chardonnay": 103,
+      "sauvignon_blanc": 137,
+      "syrah": 59
+    },
+    "test": {
+      "cabernet_franc": 155,
+      "cabernet_sauvignon": 110,
+      "chardonnay": 169,
+      "sauvignon_blanc": 256,
+      "syrah": 117
+    }
+  },
+  "totais": {
+    "train": 2906,
+    "val": 489,
+    "test": 807
+  },
+  "cachos_ignorados_por_tamanho": 227,
+  "observacao": "Divisões por foto, iguais às do detector; recortes da mesma foto ficam sempre na mesma divisão."
+}

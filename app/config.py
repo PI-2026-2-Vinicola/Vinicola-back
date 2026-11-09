@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     oasis_model_path: str = "models/oasis-cachos.onnx"
     # Confiança mínima das detecções. Vazio = limiar recomendado na ficha do modelo (0,35 para pesos .pt).
     oasis_model_confidence: float | None = None
+    # Classificador de variedades (ONNX + ficha). Vazio = sem previsão de variedade (fica a do talhão).
+    oasis_variety_model_path: str = "models/oasis-variedades.onnx"
 
     # Fuso horário da propriedade (agrupamento de indicadores por dia local).
     oasis_timezone: str = "America/Recife"
