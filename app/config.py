@@ -139,7 +139,19 @@ class Settings(BaseSettings):
             problems.append("PUBLIC_READ deve ser false em produção.")
         if any(o == "*" for o in self.cors_list):
             problems.append("CORS_ORIGINS não pode ser '*'.")
+        if self.oasis_admin_password and len(self.oasis_admin_password) < 12:
+            problems.append("OASIS_ADMIN_PASSWORD precisa ter pelo menos 12 caracteres (vazio = senha aleatória exibida no log).")
         return problems
+
+    def production_warnings(self) -> list[str]:
+        """Pontos que não impedem a inicialização, mas quase sempre indicam um .env de desenvolvimento."""
+        warnings = []
+        insecure = [o for o in self.cors_list if o.startswith("http://") or "localhost" in o or "127.0.0.1" in o]
+        if insecure:
+            warnings.append(f"CORS_ORIGINS tem origens locais ou sem HTTPS ({', '.join(insecure)}); use o endereço HTTPS do frontend.")
+        if self.database_url.startswith("sqlite"):
+            warnings.append("DATABASE_URL usa SQLite; em produção use PostgreSQL (docker-compose.prod.yml).")
+        return warnings
 
 
 @lru_cache

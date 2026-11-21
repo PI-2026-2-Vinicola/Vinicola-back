@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from . import __version__
@@ -33,6 +34,9 @@ async def lifespan(_: FastAPI):
         raise RuntimeError("Configuração insegura para produção: " + " ".join(problems))
     if settings.jwt_secret == DEFAULT_JWT_SECRET:
         log.warning("JWT_SECRET padrão em uso — aceitável só em desenvolvimento. Defina JWT_SECRET no .env.")
+    if settings.is_production:
+        for warning in settings.production_warnings():
+            log.warning("Produção: %s", warning)
     Base.metadata.create_all(engine)
     added = ensure_columns(engine)
     if added:
@@ -89,6 +93,12 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
         response.headers["Cache-Control"] = "no-store"
+    if request.url.path.startswith("/api/") or request.url.path == "/health":
+        # A API só devolve JSON, imagens e arquivos: nada pode ser executado nem embutido em outra página.
+        response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+    if request.url.scheme == "https":
+        # Atrás do proxy reverso o esquema vem de X-Forwarded-Proto (uvicorn --proxy-headers).
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
@@ -154,4 +164,11 @@ for r in (auth.router, users.router, sensors.router, readings.router, ingest.rou
 
 @app.get("/health", tags=["Sistema"])
 def health():
-    return {"status": "ok", "version": __version__}
+    """Saúde da API para o healthcheck do Docker e monitores externos: responde 503 se o banco não aceitar consultas."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 — qualquer falha de conexão deixa a API indisponível
+        log.warning("Healthcheck: banco de dados indisponível (%s)", exc.__class__.__name__)
+        return JSONResponse(status_code=503, content={"status": "indisponivel", "database": "erro", "version": __version__})
+    return {"status": "ok", "database": "ok", "version": __version__}

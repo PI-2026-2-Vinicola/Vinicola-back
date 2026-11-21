@@ -13,8 +13,14 @@ bearer = HTTPBearer(auto_error=False)
 
 
 def client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    return (forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")) or "-"
+    """
+    IP de quem fez a requisição (auditoria e limites por IP).
+
+    O cabeçalho X-Forwarded-For não é lido aqui: qualquer cliente pode enviá-lo. Atrás do proxy reverso, o
+    uvicorn (--proxy-headers) troca o IP da conexão pelo do cliente real só quando a conexão vem de um proxy
+    listado em FORWARDED_ALLOW_IPS.
+    """
+    return (request.client.host if request.client else "") or "-"
 
 
 def current_user_optional(creds: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)) -> User | None:

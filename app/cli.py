@@ -149,7 +149,10 @@ def main(argv: list[str] | None = None) -> None:
             audit(db, "senha_redefinida", actor="cli", target=user.email)
             print(f"Senha de {user.email} redefinida.")
         elif args.command == "check-config":
-            problems = get_settings().validate_for_production()
+            settings = get_settings()
+            problems = settings.validate_for_production()
+            for w in settings.production_warnings():
+                print(f"Atenção: {w}")
             if problems:
                 print("Configuração NÃO está pronta para produção:")
                 for p in problems:

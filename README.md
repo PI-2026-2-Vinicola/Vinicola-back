@@ -27,6 +27,7 @@ API, firmware e pipeline de visão computacional da OASIS, solução de IoT + IA
 | `ml/` | IA | Coleta (Embrapa WGISD), preparo do dataset, treino YOLO26, avaliação, exportação ONNX e fluxo de anotação |
 | `models/` | IA | Modelo publicado: `oasis-cachos.onnx` + ficha `oasis-cachos.json` (dados, métricas e limitações) |
 | `docs/yolo-embrapa.md` | IA | Documentação da integração: fontes da Embrapa, dataset, treinamento, métricas e inferência |
+| `deploy/` · `docker-compose.prod.yml` | Produção | Caddy (HTTPS automático), backup e restauração; guia em [`docs/producao.md`](docs/producao.md) |
 | `tests/` | Qualidade | Testes Pytest cobrindo API, importação, análise de imagem, modelo ONNX, pipeline de dados, edge e integrações (com respostas simuladas) |
 
 Dentro de `app/`:
@@ -89,6 +90,16 @@ cp .env.example .env               # defina JWT_SECRET, POSTGRES_PASSWORD e OASI
 docker compose up --build          # API :8000 · edge :8081 · Postgres 127.0.0.1:5432
 ```
 
+### Produção (HTTPS)
+
+```bash
+cp .env.example .env    # OASIS_DOMAIN, JWT_SECRET, POSTGRES_PASSWORD, OASIS_ADMIN_PASSWORD e CORS_ORIGINS
+docker compose -f docker-compose.prod.yml up -d --build   # Caddy :80/:443 → API → PostgreSQL (rede interna)
+deploy/backup.sh                                          # banco + fotos (agende no cron)
+```
+
+Só o Caddy publica portas. Ele emite e renova o certificado HTTPS e aplica HSTS. Os containers reiniciam sozinhos, e `GET /health` responde 503 quando o banco cai. O passo a passo completo (DNS, Vercel, gateway de edge, backup, atualização e monitoramento) está em [`docs/producao.md`](docs/producao.md).
+
 MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (esquema em `Vinicola-bd/mysql`).
 
 ## Variáveis de ambiente
@@ -96,6 +107,8 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | Variável | Padrão | Descrição |
 | --- | --- | --- |
 | `ENVIRONMENT` | `development` | Em `production`, a API não sobe com configuração insegura e desativa `/docs` |
+| `OASIS_DOMAIN` | vazio | Domínio da API usado pelo Caddy no `docker-compose.prod.yml` (certificado HTTPS automático) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | IPs de proxies confiáveis para `X-Forwarded-For`/`-Proto` (lido pelo uvicorn; o compose de produção já define) |
 | `DATABASE_URL` | `sqlite:///./oasis.db` | Banco (SQLite, PostgreSQL ou MySQL) |
 | `JWT_SECRET` | valor de desenvolvimento | Segredo dos tokens (≥ 32 caracteres em produção) |
 | `JWT_EXPIRES_MINUTES` | `480` | Validade da sessão |
@@ -225,12 +238,12 @@ A aba **Uvas** consome duas APIs da [AgroAPI](https://www.agroapi.cnptia.embrapa
 
 - **Credenciais externas:** sem `THINGSPEAK_CHANNEL_ID` (e a Read API Key, se o canal for privado) o Monitoramento mostra “não configurado”; sem `EMBRAPA_CONSUMER_KEY`/`EMBRAPA_CONSUMER_SECRET` a aba Uvas informa a indisponibilidade do conteúdo da Embrapa — nada é simulado.
 - **Agritec:** cultivares, adubação e produtividade atendem culturas que não incluem a uva; só o Zarc é usado. Se a lista de culturas não tiver uva, a aba informa isso.
-- **Modelo YOLO:** treinado só com o WGISD (uma propriedade em Espírito Santo do Pinhal-SP, duas datas, duas câmeras); localiza cachos, mas não identifica variedade, doença ou qualidade. Ainda não foi avaliado com fotos do Vale do São Francisco nem das câmeras ESP32-CAM. Qualidade e doenças dependem de um dataset próprio anotado e validado por um responsável técnico (`python -m app.cli export-dataset`, ver `ml/README.md`). Pesos de uso não comercial (WGISD, CC BY-NC 4.0).
+- **Modelo YOLO:** treinado só com o WGISD (uma propriedade em Espírito Santo do Pinhal-SP, duas datas, duas câmeras); localiza cachos e classifica a variedade entre as 5 do WGISD (só Cabernet Sauvignon e Syrah estão no catálogo), mas não identifica doença ou qualidade. Ainda não foi avaliado com fotos do Vale do São Francisco nem das câmeras ESP32-CAM. Qualidade e doenças dependem de um dataset próprio anotado e validado por um responsável técnico (`python -m app.cli export-dataset`, ver `ml/README.md`). Pesos de uso não comercial (WGISD, CC BY-NC-SA 4.0).
 - **Cache e limite por processo:** com várias instâncias da API, cada uma mantém o seu (para escalar, usar Redis).
 
 ## Segurança
 
-Senhas com PBKDF2-SHA256 (240 mil iterações) e política mínima; JWT com expiração; bloqueio de login por e-mail e IP; perfis `admin`, `gestor` e `operador` verificados no servidor; usuário desativado perde o acesso imediatamente; token individual por dispositivo (exibido uma vez, guardado como hash); CORS restrito; cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`; `Cache-Control: no-store` nas respostas da API; consultas parametrizadas (SQLAlchemy) e busca textual com curingas escapados; CSV exportado protegido contra injeção de fórmulas; imagens reprocessadas e sem metadados; erros internos não expõem detalhes; auditoria de logins, alterações e importações. Integrações: credenciais só no servidor (`.env` fora do git), logs de URL do httpx silenciados, HTML externo sanitizado, tempos limite, cache e limite de consultas públicas por IP.
+Senhas com PBKDF2-SHA256 (240 mil iterações) e política mínima; JWT com expiração; bloqueio de login por e-mail e IP; perfis `admin`, `gestor` e `operador` verificados no servidor; usuário desativado perde o acesso imediatamente; token individual por dispositivo (exibido uma vez, guardado como hash); CORS restrito; cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`, CSP `default-src 'none'` e, sob HTTPS, HSTS; `Cache-Control: no-store` nas respostas da API; IP do cliente vindo só de proxy confiável (`X-Forwarded-For` enviado pelo próprio cliente é ignorado); consultas parametrizadas (SQLAlchemy) e busca textual com curingas escapados; CSV exportado protegido contra injeção de fórmulas; imagens reprocessadas e sem metadados; erros internos não expõem detalhes; auditoria de logins, alterações e importações. Integrações: credenciais só no servidor (`.env` fora do git), logs de URL do httpx silenciados, HTML externo sanitizado, tempos limite, cache e limite de consultas públicas por IP.
 
 ## Testes
 

@@ -1,0 +1,78 @@
+# Produção: PostgreSQL + API + Caddy (HTTPS automático com Let's Encrypt). Guia: docs/producao.md
+#   git clone https://github.com/PI-2026-2-Vinicola/Vinicola-bd ../Vinicola-bd
+#   cp .env.example .env    # OASIS_DOMAIN, JWT_SECRET, POSTGRES_PASSWORD, OASIS_ADMIN_PASSWORD e CORS_ORIGINS
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Só o Caddy publica portas (80 e 443). A API e o banco ficam na rede interna do compose.
+name: oasis
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oasis
+      POSTGRES_USER: oasis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../Vinicola-bd/postgres/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../Vinicola-bd/postgres/02_views.sql:/docker-entrypoint-initdb.d/02_views.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oasis -d oasis"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://oasis:${POSTGRES_PASSWORD}@db:5432/oasis
+      STORAGE_DIR: /srv/storage
+      # Nenhuma porta da API é publicada: só o Caddy a alcança, e ele grava o IP real em X-Forwarded-For.
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - storage:/srv/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 6s
+      start_period: 40s
+      retries: 3
+    logging: *logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      OASIS_DOMAIN: "${OASIS_DOMAIN:?defina OASIS_DOMAIN no .env, ex. api.oasis.agr.br}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  pgdata:
+  storage:
+  caddy_data:
+  caddy_config:

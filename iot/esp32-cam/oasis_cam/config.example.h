@@ -6,9 +6,11 @@
 #define WIFI_PASSWORD  "SENHA_DA_REDE"
 
 // ---------- Destino ----------
-// Envie para o gateway de edge (recomendado) ou direto para a API na nuvem.
+// Envie para o gateway de edge (recomendado) ou direto para a API.
 // Gateway de edge:  EDGE_HOST = IP do gateway na rede da fazenda, porta 8081, caminho /capture
-// API direta:       EDGE_HOST = domínio da API,  porta 8000/443,        caminho /api/v1/ingest
+// API direta:       EDGE_HOST = IP da API na rede local,          porta 8000, caminho /api/v1/ingest
+// O firmware envia em HTTP, sem TLS. A API em produção só aceita HTTPS (docker-compose.prod.yml),
+// então em produção a câmera envia para o gateway, e o gateway encaminha para https://<domínio da API>.
 #define EDGE_HOST      "192.168.0.10"
 #define EDGE_PORT      8081
 #define EDGE_PATH      "/capture"

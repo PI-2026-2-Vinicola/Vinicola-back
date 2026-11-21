@@ -1,0 +1,26 @@
+# Proxy reverso da OASIS: HTTPS automático (Let's Encrypt), redirecionamento HTTP → HTTPS e cabeçalhos de segurança.
+# O domínio vem de OASIS_DOMAIN (.env). Para o certificado ser emitido, o DNS do domínio precisa apontar
+# para este servidor e as portas 80 e 443 precisam estar abertas.
+{$OASIS_DOMAIN} {
+	# Fotos até MAX_UPLOAD_MB (8 MB) e planilhas até MAX_IMPORT_MB (10 MB), com folga para o multipart.
+	request_body {
+		max_size 12MB
+	}
+
+	# "defer" aplica os cabeçalhos depois da resposta da API, substituindo os que ela já enviou (sem duplicar).
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	reverse_proxy api:8000
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -17,3 +17,4 @@ iot/esp32-thingspeak/oasis_thingspeak/config.h
 *.db-shm
 ml/pesos/
 *.pt
+backups/

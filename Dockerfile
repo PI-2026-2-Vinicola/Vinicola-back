@@ -13,4 +13,5 @@ RUN useradd --create-home --uid 1000 oasis && mkdir -p storage models && chown -
 USER oasis
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# --proxy-headers: o IP e o esquema (https) vêm do proxy reverso, só se ele estiver em FORWARDED_ALLOW_IPS.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header"]

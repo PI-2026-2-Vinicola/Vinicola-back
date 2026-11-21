@@ -1,4 +1,5 @@
-# Sobe a API com PostgreSQL. O esquema vem do repositório Vinicola-bd (clonado ao lado deste).
+# Desenvolvimento: API com PostgreSQL. Para produção (HTTPS, portas fechadas, backup) use docker-compose.prod.yml.
+# O esquema vem do repositório Vinicola-bd (clonado ao lado deste).
 #   git clone https://github.com/PI-2026-2-Vinicola/Vinicola-bd ../Vinicola-bd
 #   cp .env.example .env   # defina JWT_SECRET, POSTGRES_PASSWORD e OASIS_ADMIN_PASSWORD
 #   docker compose up --build
