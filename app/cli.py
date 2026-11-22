@@ -8,6 +8,7 @@ Comandos administrativos da OASIS.
     python -m app.cli seed-demo [--days 30]     # dados SINTÉTICOS marcados como demonstração
     python -m app.cli clear-demo
     python -m app.cli export-dataset --out ml/datasets/oasis-campo   # fotos reais + pré-anotações para Label Studio/CVAT
+    python -m app.cli baixar-fotos --out backups/fotos              # cópia local das fotos (disco ou bucket S3)
 """
 
 from __future__ import annotations
@@ -99,6 +100,28 @@ def check_integrations() -> int:
     return failures
 
 
+def download_photos(out: Path) -> int:
+    """Baixa as fotos que ainda não estão na pasta (mesmo nome e tamanho); devolve o código de saída."""
+    from .services.storage import StorageError, get_storage
+
+    storage = get_storage()
+    copied = skipped = 0
+    try:
+        for key, size in storage.list():
+            dst = out / key
+            if dst.is_file() and dst.stat().st_size == size:
+                skipped += 1
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(storage.get(key))
+            copied += 1
+    except StorageError as exc:
+        print(f"Falha ao acessar o armazenamento ({storage.name}): {exc}", file=sys.stderr)
+        return 1
+    print(f"Fotos em {out}: {copied} copiadas, {skipped} já existiam (armazenamento: {storage.name}).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Administração da OASIS")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -110,6 +133,8 @@ def main(argv: list[str] | None = None) -> None:
     r = sub.add_parser("reset-password", help="Redefine a senha de um usuário (e o reativa)")
     r.add_argument("--email", required=True)
     r.add_argument("--password")
+    b = sub.add_parser("baixar-fotos", help="Copia as fotos do armazenamento (disco ou bucket S3) para uma pasta local")
+    b.add_argument("--out", type=Path, default=Path("backups/fotos"))
     sub.add_parser("check-config", help="Valida as configurações para produção")
     sub.add_parser("check-integrations", help="Testa as integrações com ThingSpeak e Embrapa (chamadas reais)")
     d = sub.add_parser("seed-demo", help="Gera dados SINTÉTICOS de demonstração (marcados como tal)")
@@ -125,6 +150,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "check-integrations":
         sys.exit(1 if check_integrations() else 0)
+    if args.command == "baixar-fotos":
+        sys.exit(download_photos(args.out))
 
     Base.metadata.create_all(engine)
     ensure_columns(engine)

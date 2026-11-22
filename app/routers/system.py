@@ -65,6 +65,7 @@ def system_status(db: Session = Depends(get_db), _: User = Depends(admin_only)):
         timezone=settings.oasis_timezone,
         farm_name=settings.oasis_farm_name or None,
         public_read=settings.public_read,
+        storage_backend=settings.storage_backend,
         storage_mb=storage_size_mb(),
         counts={
             "usuarios": db.query(func.count(User.id)).scalar() or 0,

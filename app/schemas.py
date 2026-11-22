@@ -387,7 +387,8 @@ class SystemStatus(CamelModel):
     timezone: str
     farm_name: str | None
     public_read: bool
-    storage_mb: float
+    storage_backend: str  # "local" (disco do servidor) ou "s3" (bucket externo)
+    storage_mb: float | None  # None: o armazenamento não respondeu
     counts: dict[str, int]
 
 

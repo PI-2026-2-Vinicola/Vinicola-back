@@ -3,12 +3,10 @@ Ingestão de imagens — ponto de entrada do fluxo
 Sensor IoT (ou envio manual) → validação → processamento → detector → classificação → armazenamento.
 """
 
-import asyncio
 import hashlib
 import logging
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
@@ -28,7 +26,8 @@ from ..services.classifier import ANOMALY_MIN_CONFIDENCE, analyze
 from ..services.detector import ColorDetector, OnnxVarietyClassifier, OnnxYoloDetector, YoloDetector, get_detector, resolve_model_path
 from ..services.model_card import ClassificationMetrics
 from ..services.readings import persist_reading, to_reading_out
-from ..services.storage import InvalidImage, image_file, load_image, save_image
+from ..services.analysis_queue import AnalysisBusy, run_limited
+from ..services.storage import InvalidImage, StorageError, delete_images, load_image, save_image
 from ..services.timeutil import as_utc, utcnow
 from .sensors import apply_device_status, get_sensor_or_404
 
@@ -240,10 +239,15 @@ async def ingest(
         output = detector.detect(img, variety_id, variety_type)
         return output, analyze(output.detections, variety_id, variety_type, img, seed=seed)
 
-    # A análise roda fora do event loop (CPU) e tem tempo limite; uma análise lenta não trava as demais requisições.
+    # A análise roda fora do event loop (CPU), numa fila com vagas limitadas (memória), e tem tempo limite;
+    # uma análise lenta não trava as demais requisições.
     timeout = settings.oasis_analysis_timeout_seconds
     try:
-        output, analysis = await asyncio.wait_for(run_in_threadpool(run_analysis), timeout=timeout)
+        output, analysis = await run_limited(run_analysis, limit=settings.oasis_max_concurrent_analyses, timeout=timeout, queue_timeout=timeout)
+    except AnalysisBusy:
+        log.warning("Fila de análise cheia: imagem do sensor %s recusada após %.0f s de espera", sensor.id, timeout)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "O servidor está analisando outras imagens. Tente novamente em instantes.",
+                            headers={"Retry-After": "30"})
     except TimeoutError:
         log.error("Análise da imagem do sensor %s excedeu %.0f s", sensor.id, timeout)
         raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, f"A análise excedeu o tempo limite de {timeout:.0f} s. Tente novamente; se persistir, envie uma imagem menor.")
@@ -251,7 +255,12 @@ async def ingest(
         log.exception("Falha no detector ao processar imagem do sensor %s", sensor.id)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Não foi possível processar a imagem agora. Tente novamente.")
 
-    path, thumb = await run_in_threadpool(save_image, img, at)
+    try:
+        path, thumb = await run_in_threadpool(save_image, img, at)
+    except StorageError:
+        log.exception("Falha ao guardar a imagem do sensor %s", sensor.id)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Não foi possível guardar a imagem agora. Tente novamente em instantes.",
+                            headers={"Retry-After": "60"})
     via_device = user is None
     if via_device:
         apply_device_status(db, sensor, battery, signal, firmware, now)
@@ -276,8 +285,7 @@ async def ingest(
         )
     except IntegrityError:
         db.rollback()
-        for p in (path, thumb):
-            image_file(p).unlink(missing_ok=True)
+        await run_in_threadpool(delete_images, path, thumb)
         raise HTTPException(status.HTTP_409_CONFLICT, f"Já existe uma leitura do sensor {sensor.id} neste horário.")
     log.info("Leitura %s gravada (sensor %s, %s, %s)", reading.code, sensor.id, reading.quality, reading.source)
     return to_reading_out(reading)
