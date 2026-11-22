@@ -1,3 +1,4 @@
+import ipaddress
 from collections.abc import Callable
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -16,10 +17,17 @@ def client_ip(request: Request) -> str:
     """
     IP de quem fez a requisição (auditoria e limites por IP).
 
-    O cabeçalho X-Forwarded-For não é lido aqui: qualquer cliente pode enviá-lo. Atrás do proxy reverso, o
-    uvicorn (--proxy-headers) troca o IP da conexão pelo do cliente real só quando a conexão vem de um proxy
-    listado em FORWARDED_ALLOW_IPS.
+    O X-Forwarded-For enviado pelo cliente não é lido aqui, porque qualquer um pode forjá-lo. Há duas formas
+    seguras de obter o IP real atrás de um proxy:
+    - CLIENT_IP_HEADER: cabeçalho que o proxy sempre sobrescreve (no Render, True-Client-IP/CF-Connecting-IP);
+    - uvicorn --proxy-headers com o proxy em FORWARDED_ALLOW_IPS (Caddy do docker-compose.prod.yml).
     """
+    for name in get_settings().client_ip_headers:
+        value = request.headers.get(name, "").split(",")[0].strip()
+        try:
+            return str(ipaddress.ip_address(value))
+        except ValueError:
+            continue
     return (request.client.host if request.client else "") or "-"
 
 
