@@ -85,7 +85,7 @@ flowchart LR
 | `docs/yolo-embrapa.md` | IA | Documentação da integração: fontes da Embrapa, dataset, treinamento, métricas e inferência |
 | `render.yaml` · `.github/workflows/` | Nuvem | Infraestrutura da API no Render, pipeline de CI/CD e backup; guia em [`docs/nuvem.md`](docs/nuvem.md) |
 | `deploy/` · `docker-compose.prod.yml` | Produção | Caddy (HTTPS automático), backup e restauração; guia em [`docs/producao.md`](docs/producao.md) |
-| `tests/` | Qualidade | Testes Pytest cobrindo API, importação, análise de imagem, modelo ONNX, pipeline de dados, edge e integrações (com respostas simuladas) |
+| `tests/` | Qualidade | Testes Pytest cobrindo API, segurança (RBAC, isolamento, senhas, criptografia e segredos), importação, análise de imagem, modelo ONNX, pipeline de dados, edge e integrações (com respostas simuladas) |
 
 Dentro de `app/`:
 
@@ -95,7 +95,9 @@ Dentro de `app/`:
 | `config.py` | Configurações via variáveis de ambiente / `.env` e validação para produção |
 | `models.py` | Modelo relacional (SQLAlchemy) — espelha os scripts do repositório Vinicola-bd |
 | `schemas.py` | Contrato JSON (camelCase), o mesmo tipado no frontend |
-| `routers/` | `auth`, `users`, `sensors`, `ingest`, `readings`, `stats`, `imports`, `system`, `integrations` |
+| `rbac.py` | Matriz de permissões (perfil × recurso × ação), verificação em cada rota, isolamento por organização e auditoria de acessos negados |
+| `crypto.py` | Criptografia AES-256-GCM dos campos sensíveis, com troca de chave |
+| `routers/` | `auth`, `users`, `organizations`, `clients`, `sensors`, `ingest`, `readings`, `stats`, `imports`, `system`, `integrations` |
 | `services/detector.py` | YOLO em ONNX (modelo de cachos publicado) com análise de cor dentro de cada cacho; análise de cor sozinha sem modelo |
 | `services/model_card.py` | Ficha do modelo: validação do par `.onnx` + `.json` (SHA-256, tarefa e classes) |
 | `annotation_export.py` | Exportação das fotos da OASIS com pré-anotações para Label Studio/CVAT (dataset próprio) |
@@ -106,7 +108,7 @@ Dentro de `app/`:
 | `services/classifier.py` | Regras que transformam detecções em qualidade, maturação e classificação |
 | `services/imports.py` | Leitura e validação de CSV / Excel / JSON |
 | `services/sensors.py` | Status calculado dos sensores (online, atenção, offline, inativo) |
-| `seed.py` · `cli.py` · `demo.py` | Catálogo e primeiro administrador · comandos administrativos · dados de demonstração sob comando |
+| `seed.py` · `cli.py` · `demo.py` · `demo_seguranca.py` | Catálogo, organização padrão e primeiro administrador · comandos administrativos · dados de demonstração sob comando · cenário da demonstração de segurança (duas exportadoras) |
 
 ## Executando
 
@@ -150,7 +152,7 @@ docker compose up --build          # API :8000 · edge :8081 · Postgres 127.0.0
 ### Produção (HTTPS)
 
 ```bash
-cp .env.example .env    # OASIS_DOMAIN, JWT_SECRET, POSTGRES_PASSWORD, OASIS_ADMIN_PASSWORD e CORS_ORIGINS
+cp .env.example .env    # OASIS_DOMAIN, JWT_SECRET, DATA_ENCRYPTION_KEY, POSTGRES_PASSWORD, OASIS_ADMIN_PASSWORD e CORS_ORIGINS
 docker compose -f docker-compose.prod.yml up -d --build   # Caddy :80/:443 → API → PostgreSQL (rede interna)
 deploy/backup.sh                                          # banco + fotos (agende no cron)
 ```
@@ -169,6 +171,8 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | `DATABASE_URL` | `sqlite:///./oasis.db` | Banco (SQLite, PostgreSQL ou MySQL) |
 | `JWT_SECRET` | valor de desenvolvimento | Segredo dos tokens (≥ 32 caracteres em produção) |
 | `JWT_EXPIRES_MINUTES` | `480` | Validade da sessão |
+| `DATA_ENCRYPTION_KEY` | vazio (chave de desenvolvimento) | Chave AES-256 (32 bytes em base64) dos dados sensíveis dos clientes internacionais; obrigatória em produção |
+| `DATA_ENCRYPTION_OLD_KEYS` | vazio | Chaves antigas, separadas por vírgula, durante a troca de chave (`python -m app.cli recifrar-dados`) |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_LOCK_MINUTES` | `5` / `15` | Bloqueio após tentativas de login falhas |
 | `OASIS_ADMIN_EMAIL` / `_NAME` / `_PASSWORD` | `admin@oasis.agr.br` / … / vazio | Administrador inicial |
 | `OASIS_DETECTOR` | `auto` | `auto` (YOLO se o modelo existir, senão cor), `color` ou `yolo` |
@@ -305,7 +309,9 @@ A aba **Uvas** consome duas APIs da [AgroAPI](https://www.agroapi.cnptia.embrapa
 
 ## Segurança
 
-Senhas com PBKDF2-SHA256 (240 mil iterações) e política mínima; JWT com expiração; bloqueio de login por e-mail e IP; perfis `admin`, `gestor` e `operador` verificados no servidor; usuário desativado perde o acesso imediatamente; token individual por dispositivo (exibido uma vez, guardado como hash); CORS restrito; cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`, CSP `default-src 'none'` e, sob HTTPS, HSTS; `Cache-Control: no-store` nas respostas da API; IP do cliente vindo só de proxy confiável (`X-Forwarded-For` enviado pelo próprio cliente é ignorado); consultas parametrizadas (SQLAlchemy) e busca textual com curingas escapados; CSV exportado protegido contra injeção de fórmulas; imagens reprocessadas e sem metadados; erros internos não expõem detalhes; auditoria de logins, alterações e importações. Integrações: credenciais só no servidor (`.env` fora do git), logs de URL do httpx silenciados, HTML externo sanitizado, tempos limite, cache e limite de consultas públicas por IP.
+Detalhes, matriz de permissões, testes e roteiro de demonstração em [`docs/seguranca.md`](docs/seguranca.md).
+
+Senhas com PBKDF2-SHA256 (240 mil iterações) e política mínima; JWT com expiração; bloqueio de login por e-mail e IP; perfis `admin`, `gestor` (exportadora), `operador` (campo e logística) e `cliente` (cliente internacional) verificados no servidor por uma matriz de permissões única (`app/rbac.py`), com isolamento entre exportadoras e acessos negados registrados na auditoria; dados pessoais e comerciais dos clientes internacionais cifrados no banco com AES-256-GCM (`app/crypto.py`); usuário desativado perde o acesso imediatamente; token individual por dispositivo (exibido uma vez, guardado como hash); CORS restrito; cabeçalhos `nosniff`, `X-Frame-Options`, `Referrer-Policy`, CSP `default-src 'none'` e, sob HTTPS, HSTS; `Cache-Control: no-store` nas respostas da API; IP do cliente vindo só de proxy confiável (`X-Forwarded-For` enviado pelo próprio cliente é ignorado); consultas parametrizadas (SQLAlchemy) e busca textual com curingas escapados; CSV exportado protegido contra injeção de fórmulas; imagens reprocessadas e sem metadados; erros internos não expõem detalhes; auditoria de logins, alterações e importações. Integrações: credenciais só no servidor (`.env` fora do git), logs de URL do httpx silenciados, HTML externo sanitizado, tempos limite, cache e limite de consultas públicas por IP.
 
 ## Testes
 

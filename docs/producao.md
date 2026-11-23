@@ -36,7 +36,7 @@ cp .env.example .env
 Gere os segredos:
 
 ```bash
-python3 -c "import secrets as s; print('JWT_SECRET=' + s.token_urlsafe(48)); print('POSTGRES_PASSWORD=' + s.token_urlsafe(24)); print('OASIS_ADMIN_PASSWORD=' + s.token_urlsafe(18))"
+python3 -c "import secrets as s; print('JWT_SECRET=' + s.token_urlsafe(48)); import base64; print('DATA_ENCRYPTION_KEY=' + base64.b64encode(s.token_bytes(32)).decode()); print('POSTGRES_PASSWORD=' + s.token_urlsafe(24)); print('OASIS_ADMIN_PASSWORD=' + s.token_urlsafe(18))"
 ```
 
 Preencha no `.env`:
@@ -45,6 +45,7 @@ Preencha no `.env`:
 | --- | --- | --- |
 | `OASIS_DOMAIN` | `api.oasis.agr.br` | Domínio da API, já apontado no DNS |
 | `JWT_SECRET` | (gerado) | Pelo menos 32 caracteres |
+| `DATA_ENCRYPTION_KEY` | (gerado) | Chave dos dados sensíveis. Guarde uma cópia fora do servidor: sem ela, os dados cifrados (inclusive dos backups) não podem ser lidos |
 | `POSTGRES_PASSWORD` | (gerado) | Só letras, números, `-` e `_`, porque a senha entra na URL do banco |
 | `OASIS_ADMIN_EMAIL` | `admin@suaempresa.com.br` | Administrador criado na primeira inicialização |
 | `OASIS_ADMIN_PASSWORD` | (gerado) | Pelo menos 12 caracteres. Vazio = senha aleatória exibida uma vez no log |
