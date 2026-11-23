@@ -9,7 +9,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import reader
 from ..models import EnvironmentReading, Reading, Sensor, User
 from ..schemas import BucketOut, EnvironmentDay, EnvironmentSummary, GroupOut, PeriodTotals, QualityCount, SummaryOut
 from ..services.sensors import status_counts
@@ -36,6 +35,8 @@ def _quality_counts(query) -> QualityCount:
 
 def _sensors_in_scope(db: Session, f: ReadingFilters) -> list[Sensor]:
     q = db.query(Sensor)
+    if f.scope is not None:
+        q = q.filter(Sensor.organization_id == f.scope)
     if f.sensor_id:
         q = q.filter(Sensor.id == f.sensor_id.upper())
     if f.block:
@@ -47,6 +48,8 @@ def _sensors_in_scope(db: Session, f: ReadingFilters) -> list[Sensor]:
 
 def _environment_query(db: Session, f: ReadingFilters, start, end):
     q = db.query(EnvironmentReading).join(Sensor, EnvironmentReading.sensor_id == Sensor.id).filter(EnvironmentReading.measured_at <= end)
+    if f.scope is not None:
+        q = q.filter(Sensor.organization_id == f.scope)
     if start:
         q = q.filter(EnvironmentReading.measured_at >= start)
     if f.sensor_id:
@@ -59,7 +62,7 @@ def _environment_query(db: Session, f: ReadingFilters, start, end):
 
 
 @router.get("/summary", response_model=SummaryOut, response_model_by_alias=True)
-def summary(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+def summary(filters: ReadingFilters = Depends(), db: Session = Depends(get_db)):
     """Indicadores do dashboard no período, com comparação ao período anterior de mesma duração."""
     f = _scoped(filters)
     start, end = f.bounds()
@@ -81,7 +84,7 @@ def summary(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), 
     ).one()
 
     return SummaryOut(
-        period_start=start or from_db(db.query(func.min(Reading.captured_at)).scalar()) or end,
+        period_start=start or from_db(base.order_by(None).with_entities(func.min(Reading.captured_at)).scalar()) or end,
         period_end=end,
         sensors_total=sum(sensors.values()),
         sensors_online=sensors["online"],
@@ -113,7 +116,7 @@ def _bucket(key: str, label: str, values: dict) -> BucketOut:
 
 
 @router.get("/by-day", response_model=list[BucketOut], response_model_by_alias=True)
-def by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+def by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db)):
     """Leituras por dia (fuso da propriedade) e qualidade. Dias sem leitura aparecem com zero."""
     f = _scoped(filters)
     start, end = f.bounds()
@@ -133,7 +136,7 @@ def by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _
 
 
 @router.get("/by-hour", response_model=list[BucketOut], response_model_by_alias=True)
-def by_hour(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+def by_hour(filters: ReadingFilters = Depends(), db: Session = Depends(get_db)):
     """Distribuição das leituras por hora do dia (horário local)."""
     f = _scoped(filters)
     buckets = {h: {"boa": 0, "atencao": 0, "critica": 0, "conf": 0.0} for h in range(24)}
@@ -159,7 +162,6 @@ def breakdown(
     by: Literal["sensor", "variety", "maturation", "classification", "source", "block"] = Query(...),
     filters: ReadingFilters = Depends(),
     db: Session = Depends(get_db),
-    _: User | None = Depends(reader),
 ):
     """Totais por sensor, variedade, estágio de maturação, classificação, origem ou bloco."""
     f = _scoped(filters)
@@ -178,7 +180,7 @@ def breakdown(
 
 
 @router.get("/environment", response_model=list[EnvironmentDay], response_model_by_alias=True)
-def environment_by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+def environment_by_day(filters: ReadingFilters = Depends(), db: Session = Depends(get_db)):
     """Médias diárias das medições ambientais (temperatura, umidade, luminosidade, umidade do solo)."""
     f = _scoped(filters)
     start, end = f.bounds()

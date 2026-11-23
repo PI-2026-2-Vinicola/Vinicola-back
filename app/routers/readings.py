@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..catalog import MATURATION_LABEL, QUALITY_LABEL
 from ..database import get_db
-from ..deps import client_ip, reader, require_roles
+from ..deps import client_ip
+from ..rbac import check_organization, require, tenant
 from ..models import Reading, Sensor, User, Variety
 from ..schemas import ReadingOut, ReadingPage
 from ..services.audit import audit
@@ -43,7 +44,10 @@ class ReadingFilters:
         block: str | None = Query(default=None, max_length=40),
         source: str | None = Query(default=None, max_length=20),
         q: str | None = Query(default=None, max_length=80),
+        user: User | None = Depends(require("leituras", "R", public_read=True)),
     ):
+        # Toda consulta de leituras, indicadores e medições passa por aqui: perfil conferido e organização aplicada.
+        self.user, self.scope = user, tenant(user)
         if date_from and date_to and date_from > date_to:
             raise HTTPException(422, "A data inicial é posterior à data final.")
         self.days, self.date_from, self.date_to = days, date_from, date_to
@@ -59,6 +63,8 @@ class ReadingFilters:
     def apply(self, db: Session, period: tuple | None = None) -> SAQuery:
         """Aplica os filtros. `period=(início, fim)` substitui o período informado (comparação com o período anterior)."""
         query = db.query(Reading).join(Sensor, Reading.sensor_id == Sensor.id)
+        if self.scope is not None:
+            query = query.filter(Sensor.organization_id == self.scope)
         start, end = period or self.bounds()
         if start:
             query = query.filter(Reading.captured_at >= start)
@@ -110,7 +116,6 @@ def list_readings(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200, alias="pageSize"),
     db: Session = Depends(get_db),
-    _: User | None = Depends(reader),
 ):
     """Histórico de leituras com filtros combináveis e paginação no servidor."""
     query = filters.apply(db)
@@ -132,7 +137,7 @@ def _safe(value) -> str:
 
 
 @router.get("/export", response_class=StreamingResponse)
-def export_readings(filters: ReadingFilters = Depends(), db: Session = Depends(get_db), _: User | None = Depends(reader)):
+def export_readings(filters: ReadingFilters = Depends(), db: Session = Depends(get_db)):
     """Exporta as leituras filtradas em CSV (separador ';', UTF-8 com BOM para abrir no Excel)."""
     query = filters.apply(db)
     if query.order_by(None).count() > EXPORT_LIMIT:
@@ -173,21 +178,25 @@ def export_readings(filters: ReadingFilters = Depends(), db: Session = Depends(g
     )
 
 
-def get_reading_or_404(db: Session, code: str) -> Reading:
+def get_reading_or_404(db: Session, code: str, request: Request | None = None, user: User | None = None) -> Reading:
+    """Leitura existente e, se houver usuário, da organização dele (403 e auditoria se for de outra)."""
     reading = db.query(Reading).options(selectinload(Reading.detections), selectinload(Reading.sensor)).filter(Reading.code == code.upper()).first()
     if not reading:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Leitura {code} não encontrada.")
+    if user is not None:
+        check_organization(db, request, user, reading.sensor.organization_id, "leituras", reading.code or code)
     return reading
 
 
 @router.get("/{code}", response_model=ReadingOut, response_model_by_alias=True)
-def get_reading(code: str, db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    return to_reading_out(get_reading_or_404(db, code))
+def get_reading(code: str, request: Request, db: Session = Depends(get_db), user: User | None = Depends(require("leituras", "R", public_read=True))):
+    return to_reading_out(get_reading_or_404(db, code, request, user))
 
 
 @router.get("/{code}/image", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
-def get_reading_image(code: str, size: Literal["full", "thumb"] = "full", db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    reading = get_reading_or_404(db, code)
+def get_reading_image(code: str, request: Request, size: Literal["full", "thumb"] = "full", db: Session = Depends(get_db),
+                      user: User | None = Depends(require("leituras", "R", public_read=True))):
+    reading = get_reading_or_404(db, code, request, user)
     relative = reading.thumb_path if size == "thumb" and reading.thumb_path else reading.image_path
     if not relative:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Esta leitura não possui imagem armazenada.")
@@ -202,9 +211,9 @@ def get_reading_image(code: str, size: Literal["full", "thumb"] = "full", db: Se
 
 
 @router.delete("/{code}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_reading(code: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(require_roles("admin"))):
+def delete_reading(code: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(require("leituras", "D"))):
     """Remove uma leitura (por exemplo, captura de teste) e seus arquivos de imagem."""
-    reading = get_reading_or_404(db, code)
+    reading = get_reading_or_404(db, code, request, admin)
     files = [p for p in (reading.image_path, reading.thumb_path) if p]
     details = {"sensor": reading.sensor_id, "capturada_em": from_db(reading.captured_at).isoformat(), "origem": reading.source}
     db.delete(reading)

@@ -75,6 +75,7 @@ def to_reading_out(r: Reading) -> ReadingOut:
         id=code,
         sensor_id=r.sensor_id,
         sensor_name=r.sensor.name,
+        organization_name=r.sensor.organization.name if r.sensor.organization else None,
         block=r.sensor.block,
         location=r.sensor.location,
         captured_at=from_db(r.captured_at),
