@@ -71,7 +71,7 @@ flowchart LR
 - o Render usa o `/health` como health check, e o UptimeRobot alerta por e-mail;
 - logs: Render → Logs (API), Vercel → Logs (site), Supabase → Logs & Analytics (banco e bucket), GitHub → Actions (pipeline e backups).
 
-**8. Custos por mês:** **US$ 0** no uso atual (3 câmeras e 5 usuários, tudo nos planos gratuitos). Com 10× mais usuários, **cerca de US$ 50**: Render Standard US$ 25 e Supabase Pro US$ 25; Vercel e GitHub continuam gratuitos. As premissas estão em [`docs/nuvem.md`, seção 11](docs/nuvem.md#11-custos).
+**8. Custos por mês:** **US$ 0** no uso atual (3 câmeras e 5 usuários, tudo nos planos gratuitos). Com 10× mais usuários, **cerca de US$ 52**: Render Standard US$ 25 mais cerca de US$ 2 de banda excedente, e Supabase Pro US$ 25; Vercel e GitHub continuam gratuitos. As premissas estão em [`docs/nuvem.md`, seção 11](docs/nuvem.md#11-custos).
 
 ## Estrutura
 

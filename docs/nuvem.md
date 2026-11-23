@@ -275,17 +275,18 @@ Para estimar o custo, definimos dois cenários de uso:
 | Fotos por mês (9 por câmera por dia) | cerca de 810 | cerca de 8.100 |
 | Espaço novo em fotos por mês (cerca de 0,4 MB por leitura) | cerca de 0,33 GB | cerca de 3,3 GB |
 | Banco | menos de 50 MB | cerca de 300 MB por ano |
+| Banda de saída da API (fotos e miniaturas vistas no painel) | cerca de 0,5 GB | cerca de 18 GB |
 
 Custo de cada serviço nos dois cenários:
 
 | Serviço | Uso atual | 10× mais usuários |
 | --- | --- | --- |
 | Vercel (frontend) | Hobby: **US$ 0** (100 GB de banda) | Hobby: **US$ 0** (uso não comercial). Se virar produto, Pro: US$ 20 por membro |
-| Render (API) | Free: **US$ 0** | **Standard: US$ 25** (1 CPU e 2 GB, para analisar 3 ou 4 fotos ao mesmo tempo) |
+| Render (API) | Workspace Hobby + instância Free: **US$ 0** (5 GB de banda inclusos) | Workspace Hobby + instância **Standard: US$ 25** (1 CPU e 2 GB, para analisar 3 ou 4 fotos ao mesmo tempo) + banda excedente de cerca de 13 GB × US$ 0,15 = **cerca de US$ 2** |
 | Supabase (banco e fotos) | Free: **US$ 0** | **Pro: US$ 25** (8 GB de banco, 100 GB de arquivos e backups diários; inclui US$ 10 de crédito de computação) |
 | GitHub Actions | **US$ 0** (repositório público) | **US$ 0** |
 | UptimeRobot | **US$ 0** | **US$ 0** |
-| **Total por mês** | **US$ 0** | **cerca de US$ 50** |
+| **Total por mês** | **US$ 0** | **cerca de US$ 52** |
 
 Os valores vêm das páginas de preço e das calculadoras dos provedores, consultadas em novembro de 2026: [Render](https://render.com/pricing), [Supabase](https://supabase.com/pricing) e [Vercel](https://vercel.com/pricing). O relatório traz as capturas de tela. No cenário atual, o limite que chega primeiro é o 1 GB de fotos do Supabase, em cerca de 3 meses.
 
