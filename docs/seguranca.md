@@ -134,7 +134,7 @@ Além disso, o Supabase cifra o disco do banco e do Storage (AES-256), e os back
 | `DATABASE_URL` | `.env` local | Painel do Render (`sync: false`) |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | `.env` local | Painel do Render (`sync: false`) |
 | `OASIS_ADMIN_PASSWORD` | `.env` local | Painel do Render (`sync: false`) |
-| `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `BACKUP_DATABASE_URL`, `BACKUP_PASSPHRASE` | — | Secrets dos ambientes `producao` e `backup` do GitHub |
+| `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `OASIS_BACKUP_DATABASE_URL`, `OASIS_BACKUP_PASSPHRASE` e `OASIS_BACKUP_S3_*` | — | Secrets dos ambientes `producao` e `backup` do GitHub |
 
 - `.env` está no `.gitignore`. Só o modelo `.env.example`, com nomes e sem valores, é versionado.
 - O pipeline roda o **gitleaks** em todo o histórico a cada push. Um segredo commitado reprova o build.
