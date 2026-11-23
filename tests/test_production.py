@@ -10,6 +10,7 @@ from app.routers.auth import reset_login_attempts
 from .conftest import API
 
 STRONG_SECRET = "s" * 48
+DATA_KEY = "a2V5LWRlLXRlc3RlLWNvbS0zMi1ieXRlcy1leGF0b3M="  # 32 bytes em base64
 
 
 def test_health_reports_database(client):
@@ -46,7 +47,7 @@ def test_forged_forwarded_for_does_not_bypass_the_ip_lockout(client):
 
 
 def _prod(**overrides) -> Settings:
-    values = {"environment": "production", "jwt_secret": STRONG_SECRET, "public_read": False, "oasis_admin_password": "",
+    values = {"environment": "production", "jwt_secret": STRONG_SECRET, "public_read": False, "oasis_admin_password": "", "data_encryption_key": DATA_KEY,
               "cors_origins": "https://oasis.example.com", "database_url": "postgresql+psycopg://oasis:x@db:5432/oasis"}
     return Settings(_env_file=None, **(values | overrides))
 
