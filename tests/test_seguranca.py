@@ -259,3 +259,19 @@ def test_matriz_exposta_pela_api_e_a_mesma_aplicada(client, cenario):
     data = client.get(f"{API}/auth/matrix", headers=cenario["u"]["operadorA"]).json()
     recursos = {r["id"]: r["permissions"] for r in data["resources"]}
     assert recursos == {k: v[1] for k, v in MATRIX.items()} and [r["id"] for r in data["roles"]] == ["admin", "gestor", "operador", "cliente"]
+
+
+def test_administrador_inicial_e_criado_mesmo_com_usuarios_de_organizacoes(tmp_path, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.seed import bootstrap_admin
+
+    engine = create_engine(f"sqlite:///{tmp_path}/novo.db")
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as db:
+        db.add(User(name="Gestor", email="g@x.example", role="gestor", password_hash="x"))
+        db.commit()
+        bootstrap_admin(db)
+        assert db.query(User).filter(User.role == "admin").count() == 1
+        assert bootstrap_admin(db) is None and db.query(User).filter(User.role == "admin").count() == 1

@@ -31,13 +31,17 @@ def seed_catalog(db: Session) -> int:
 
 def bootstrap_admin(db: Session) -> str | None:
     """
-    Cria o primeiro administrador quando o banco não tem usuários.
+    Cria o administrador inicial quando o banco não tem nenhum administrador (por exemplo, no primeiro
+    início da API, mesmo que `demo-seguranca` já tenha criado usuários de organizações).
     A senha vem de OASIS_ADMIN_PASSWORD; se vazia, uma senha aleatória é gerada e exibida uma única vez.
     Retorna a senha gerada (ou None).
     """
-    if db.query(User.id).first():
+    if db.query(User.id).filter(User.role == "admin").first():
         return None
     settings = get_settings()
+    if db.query(User.id).filter(User.email == settings.oasis_admin_email.lower()).first():
+        log.warning("Nenhum administrador ativo, mas %s já é usuário de outro perfil: crie o administrador pela CLI.", settings.oasis_admin_email)
+        return None
     password = settings.oasis_admin_password or new_password()
     generated = not settings.oasis_admin_password
     db.add(User(name=settings.oasis_admin_name, email=settings.oasis_admin_email.lower(), role="admin", password_hash=hash_secret(password)))

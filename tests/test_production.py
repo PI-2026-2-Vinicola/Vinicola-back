@@ -1,5 +1,7 @@
 """Itens de produção: saúde com banco, cabeçalhos de segurança, IP do cliente e validação do .env."""
 
+import base64
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
@@ -10,7 +12,7 @@ from app.routers.auth import reset_login_attempts
 from .conftest import API
 
 STRONG_SECRET = "s" * 48
-DATA_KEY = "a2V5LWRlLXRlc3RlLWNvbS0zMi1ieXRlcy1leGF0b3M="  # 32 bytes em base64
+DATA_KEY = base64.b64encode(b"chave-ficticia-de-teste-32-bytes").decode()  # 32 bytes, gerada no teste
 
 
 def test_health_reports_database(client):

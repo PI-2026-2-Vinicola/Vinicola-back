@@ -15,4 +15,6 @@ regexes = [
   '''embrapa_consumer_secret=""''',
   # token de exemplo de desenvolvimento citado em READMEs antigos (nunca foi credencial de produção)
   '''X-Device-Token: osais-dev-s-001''',
+  # chave fictícia de teste (base64 de "key-de-teste-com-32-bytes-exatos"), substituída por uma gerada no teste
+  '''DATA_KEY = "a2V5LWRlLXRlc3RlLWNvbS0zMi1ieXRlcy1leGF0b3M="''',
 ]
