@@ -19,11 +19,11 @@ import sys
 from pathlib import Path
 
 from .config import get_settings
-from .database import Base, SessionLocal, engine, ensure_columns
+from .database import Base, SessionLocal, engine, ensure_columns, ensure_role_constraint
 from .models import User
 from .schemas import UserCreateIn, check_password
 from .security import hash_secret
-from .seed import bootstrap_admin, seed_catalog
+from .seed import bootstrap_admin, ensure_default_organization, seed_catalog
 from .services.audit import audit
 
 
@@ -128,8 +128,13 @@ def main(argv: list[str] | None = None) -> None:
     c = sub.add_parser("create-user", help="Cria um usuário")
     c.add_argument("--name", required=True)
     c.add_argument("--email", required=True)
-    c.add_argument("--role", choices=["admin", "gestor", "operador"], required=True)
+    c.add_argument("--role", choices=["admin", "gestor", "operador", "cliente"], required=True)
     c.add_argument("--password")
+    c.add_argument("--organizacao", type=int, help="id da organização (gestor, operador e cliente; vazio = organização padrão)")
+    c.add_argument("--cliente", type=int, help="id do cliente internacional (obrigatório para o perfil cliente)")
+    ds = sub.add_parser("demo-seguranca", help="Cria duas exportadoras, usuários de cada perfil e clientes com dados cifrados")
+    ds.add_argument("--senha", help="mesma senha para todos os usuários criados (padrão: aleatória e exibida uma vez)")
+    sub.add_parser("matriz-rbac", help="Imprime a matriz de permissões (perfis × recursos) aplicada pela API")
     r = sub.add_parser("reset-password", help="Redefine a senha de um usuário (e o reativa)")
     r.add_argument("--email", required=True)
     r.add_argument("--password")
@@ -150,23 +155,55 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "check-integrations":
         sys.exit(1 if check_integrations() else 0)
+    if args.command == "matriz-rbac":
+        from .rbac import matrix_markdown
+
+        print(matrix_markdown())
+        print("\nC = criar · R = consultar · U = atualizar · D = excluir · – = sem acesso")
+        return
     if args.command == "baixar-fotos":
         sys.exit(download_photos(args.out))
 
     Base.metadata.create_all(engine)
     ensure_columns(engine)
+    ensure_role_constraint(engine)
     with SessionLocal() as db:
         seed_catalog(db)
+        ensure_default_organization(db)
         if args.command == "create-user":
+            from fastapi import HTTPException
+
+            from .routers.users import _membership
+
             try:
-                data = UserCreateIn(name=args.name, email=args.email, role=args.role, password=_ask_password(args.password))
+                data = UserCreateIn(name=args.name, email=args.email, role=args.role, password=_ask_password(args.password),
+                                    organization_id=args.organizacao, client_id=args.cliente)
             except ValueError as exc:
                 sys.exit(str(exc))
             if db.query(User).filter(User.email == data.email).first():
                 sys.exit(f"Já existe um usuário com o e-mail {data.email}.")
-            db.add(User(name=data.name, email=data.email, role=data.role, password_hash=hash_secret(data.password)))
-            audit(db, "usuario_criado", actor="cli", target=data.email, details={"perfil": data.role})
+            try:
+                org_id, client_id = _membership(db, data.role, data.organization_id, data.client_id)
+            except HTTPException as exc:
+                sys.exit(str(exc.detail))
+            db.add(User(name=data.name, email=data.email, role=data.role, password_hash=hash_secret(data.password), organization_id=org_id, client_id=client_id))
+            audit(db, "usuario_criado", actor="cli", target=data.email, details={"perfil": data.role, "organizacao": org_id})
             print(f"Usuário {data.email} ({data.role}) criado.")
+        elif args.command == "demo-seguranca":
+            from .demo_seguranca import seed_security_demo
+
+            if args.senha:
+                try:
+                    check_password(args.senha)
+                except ValueError as exc:
+                    sys.exit(str(exc))
+            created = seed_security_demo(db, args.senha)
+            if not created:
+                print("Cenário já existente: nenhum usuário novo.")
+            for u in created:
+                print(f"{u['organizacao']:<26} {u['perfil']:<9} {u['email']:<32} senha: {u['senha']}")
+            if created and not args.senha:
+                print("Guarde as senhas: elas não serão exibidas novamente.")
         elif args.command == "reset-password":
             user = db.query(User).filter(User.email == args.email.strip().lower()).first()
             if not user:
