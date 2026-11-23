@@ -213,6 +213,42 @@ def test_troca_de_chave_mantem_dados_antigos_legiveis(monkeypatch):
         crypto.reset_keys()
 
 
+def test_recifrar_dados_conclui_a_troca_de_chave(client, admin_headers, cenario, monkeypatch):
+    from app.routers.clients import rewrap_all
+
+    settings = get_settings()
+    original = base64.b64encode(crypto._keys()[0]).decode()
+    nova = base64.b64encode(os.urandom(32)).decode()
+
+    def usar(atual: str, antigas: str) -> None:
+        monkeypatch.setattr(settings, "data_encryption_key", atual)
+        monkeypatch.setattr(settings, "data_encryption_old_keys", antigas)
+        crypto.reset_keys()
+
+    with SessionLocal() as db:
+        antes = {c.id: c.email_enc for c in db.query(InternationalClient)}
+    try:
+        usar(nova, original)  # 1. chave nova em uso, antiga ainda configurada
+        with SessionLocal() as db:
+            assert rewrap_all(db) == len(antes)  # 2. recifra tudo com a nova
+            db.commit()
+        usar(nova, "")  # 3. a antiga sai e os dados continuam legíveis
+        cid = cenario["clientes"]["A"]
+        r = client.get(f"{API}/clients/{cid}", headers=admin_headers)
+        assert r.status_code == 200 and r.json()["email"] == "anna.a@importadora.example"
+        with SessionLocal() as db:
+            depois = {c.id: c.email_enc for c in db.query(InternationalClient)}
+            assert rewrap_all(db) == 0  # nada mais a recifrar
+        assert all(depois[i] != antes[i] for i in antes)
+    finally:
+        usar(original, nova)  # devolve os dados à chave usada pelos demais testes
+        with SessionLocal() as db:
+            rewrap_all(db)
+            db.commit()
+        monkeypatch.undo()
+        crypto.reset_keys()
+
+
 # ------------------------------------------------------------------ 6. segredos fora do código
 def test_producao_exige_segredos_reais():
     assert key_problem("") and key_problem(base64.b64encode(crypto.DEV_KEY).decode()) and key_problem("curta")

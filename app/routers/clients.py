@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..crypto import DecryptionError, decrypt, encrypt
+from ..crypto import DecryptionError, current_key_id, decrypt, encrypt, needs_rewrap
 from ..database import get_db
 from ..deps import client_ip
 from ..models import InternationalClient, User
@@ -160,3 +160,19 @@ def delete_client(client_id: int, request: Request, db: Session = Depends(get_db
     db.delete(c)
     audit(db, "cliente_excluido", actor=user.email, target=f"cliente {c.id}", details={"empresa": c.company_name}, ip=client_ip(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def rewrap_all(db: Session) -> int:
+    """Recifra com a chave atual os campos gravados com chaves antigas (etapa final da troca de chave)."""
+    changed = 0
+    for client in db.query(InternationalClient).all():
+        touched = False
+        for field in SENSITIVE:
+            value = getattr(client, f"{field}_enc")
+            if needs_rewrap(value):
+                ctx = context(client.organization_id, field)
+                setattr(client, f"{field}_enc", encrypt(decrypt(value, ctx), ctx))
+                touched = True
+        changed += touched
+    audit(db, "chave_de_dados_trocada", actor="cli", details={"clientes_recifrados": changed, "chave": current_key_id()})
+    return changed

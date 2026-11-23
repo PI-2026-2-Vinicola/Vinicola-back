@@ -100,6 +100,15 @@ def encrypt(value: str | None, context: str) -> str | None:
     return f"{PREFIX}{_key_id(key)}:{b64(nonce)}:{b64(sealed)}"
 
 
+def current_key_id() -> str:
+    return _key_id(_keys()[0])
+
+
+def needs_rewrap(value: str | None) -> bool:
+    """Valor cifrado com uma chave antiga (deve ser recifrado com a atual antes de a antiga ser removida)."""
+    return is_encrypted(value) and value[len(PREFIX):].split(":")[0] != current_key_id()
+
+
 def is_encrypted(value: str | None) -> bool:
     return bool(value) and value.startswith(PREFIX)
 

@@ -135,6 +135,7 @@ def main(argv: list[str] | None = None) -> None:
     ds = sub.add_parser("demo-seguranca", help="Cria duas exportadoras, usuários de cada perfil e clientes com dados cifrados")
     ds.add_argument("--senha", help="mesma senha para todos os usuários criados (padrão: aleatória e exibida uma vez)")
     sub.add_parser("matriz-rbac", help="Imprime a matriz de permissões (perfis × recursos) aplicada pela API")
+    sub.add_parser("recifrar-dados", help="Recifra com a DATA_ENCRYPTION_KEY atual os dados gravados com chaves antigas")
     r = sub.add_parser("reset-password", help="Redefine a senha de um usuário (e o reativa)")
     r.add_argument("--email", required=True)
     r.add_argument("--password")
@@ -204,6 +205,11 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"{u['organizacao']:<26} {u['perfil']:<9} {u['email']:<32} senha: {u['senha']}")
             if created and not args.senha:
                 print("Guarde as senhas: elas não serão exibidas novamente.")
+        elif args.command == "recifrar-dados":
+            from .routers.clients import rewrap_all
+
+            total = rewrap_all(db)
+            print(f"{total} cadastro(s) recifrado(s) com a chave atual. As chaves de DATA_ENCRYPTION_OLD_KEYS já podem ser removidas.")
         elif args.command == "reset-password":
             user = db.query(User).filter(User.email == args.email.strip().lower()).first()
             if not user:
