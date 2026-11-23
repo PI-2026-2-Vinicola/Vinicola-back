@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .catalog import VARIETIES
 from .config import get_settings
-from .models import User, Variety
+from .models import ImportJob, Organization, Sensor, User, Variety
 from .security import hash_secret, new_password
 from .services.audit import audit
 
@@ -51,3 +51,28 @@ def bootstrap_admin(db: Session) -> str | None:
     else:
         log.info("Administrador inicial %s criado com a senha definida em OASIS_ADMIN_PASSWORD.", settings.oasis_admin_email)
     return password if generated else None
+
+
+def default_organization(db: Session) -> Organization:
+    """A organização mais antiga: recebe registros criados sem organização informada."""
+    org = db.query(Organization).order_by(Organization.id).first()
+    if org is None:
+        org = Organization(name=get_settings().oasis_farm_name.strip() or "Organização padrão")
+        db.add(org)
+        db.flush()
+    return org
+
+
+def ensure_default_organization(db: Session) -> Organization:
+    """
+    Garante que exista ao menos uma organização e que nenhum sensor, usuário não administrador ou
+    importação fique sem organização (bancos criados antes do isolamento por organização). Idempotente.
+    """
+    org = default_organization(db)
+    moved = db.query(Sensor).filter(Sensor.organization_id.is_(None)).update({Sensor.organization_id: org.id}, synchronize_session=False)
+    moved += db.query(User).filter(User.organization_id.is_(None), User.role != "admin").update({User.organization_id: org.id}, synchronize_session=False)
+    db.query(ImportJob).filter(ImportJob.organization_id.is_(None)).update({ImportJob.organization_id: org.id}, synchronize_session=False)
+    db.commit()
+    if moved:
+        log.info("Registros sem organização associados a %s (%d).", org.name, moved)
+    return org

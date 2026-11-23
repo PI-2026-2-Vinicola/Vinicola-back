@@ -15,6 +15,7 @@ from datetime import datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from .catalog import MATURATIONS
+from .seed import default_organization
 from .models import EnvironmentReading, Reading, Sensor, Variety
 from .services.classifier import analyze
 from .services.detector import MockDetector
@@ -52,6 +53,7 @@ def seed_demo(db: Session, days: int = 30, interval_min: int = 120) -> int:
         sensor = Sensor(
             id=sid, name=name, block="Demonstração", location="Dados sintéticos — sem localização real",
             variety_id=variety, device="Demonstração", capture_interval_min=interval_min, active=True,
+            organization_id=default_organization(db).id,
         )
         db.add(sensor)
         db.flush()
