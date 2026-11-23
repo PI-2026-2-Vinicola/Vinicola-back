@@ -8,7 +8,7 @@ from ..config import get_settings
 from ..database import get_db
 from ..deps import client_ip, current_user
 from ..models import User
-from ..rbac import me_out
+from ..rbac import ACTION_LABEL, MATRIX, ROLE_LABEL, me_out
 from ..schemas import LoginIn, MeOut, PasswordChangeIn, TokenOut
 from ..security import create_access_token, hash_secret, verify_secret
 from ..services.audit import audit
@@ -60,6 +60,18 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
 def me(user: User = Depends(current_user)):
     """Usuário da sessão, com organização, perfil e permissões da matriz RBAC."""
     return me_out(user)
+
+
+@router.get("/matrix", tags=["Autenticação"])
+def permission_matrix(_: User = Depends(current_user)):
+    """Matriz de permissões aplicada pela API (perfis × recursos × operações C/R/U/D e alcance)."""
+    return {
+        "roles": [{"id": r, "label": label} for r, label in ROLE_LABEL.items()],
+        "actions": ACTION_LABEL,
+        "resources": [
+            {"id": rid, "label": label, "permissions": perms, "scope": scope} for rid, (label, perms, scope) in MATRIX.items()
+        ],
+    }
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)

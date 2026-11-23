@@ -253,3 +253,9 @@ def test_matriz_cobre_todos_os_perfis_e_operacoes_validas():
         assert set(perms) <= {"admin", "gestor", "operador", "cliente"}
         assert all(set(ops) <= set("CRUD") for ops in perms.values()), recurso
     assert MATRIX["usuarios"][1] == {"admin": "CRUD"}
+
+
+def test_matriz_exposta_pela_api_e_a_mesma_aplicada(client, cenario):
+    data = client.get(f"{API}/auth/matrix", headers=cenario["u"]["operadorA"]).json()
+    recursos = {r["id"]: r["permissions"] for r in data["resources"]}
+    assert recursos == {k: v[1] for k, v in MATRIX.items()} and [r["id"] for r in data["roles"]] == ["admin", "gestor", "operador", "cliente"]
