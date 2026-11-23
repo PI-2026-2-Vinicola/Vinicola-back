@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from .catalog import ANOMALY_TEXT, GENERIC_CLUSTER_CLASS, MODEL_CLASSES, VARIETIES, yolo_class
 from .models import Reading
-from .services.storage import image_file
+from .services.storage import read_image
 
 CLASS_ID = {c: i for i, c in enumerate(MODEL_CLASSES)}
 VARIETY_NAME = {v["id"]: v["name"] for v in VARIETIES}
@@ -84,16 +84,13 @@ def export_dataset(db: Session, out: Path, *, since: datetime | None = None, sen
     tasks, rows, missing, boxes_total = [], [], 0, 0
     for r in readings:
         try:
-            src = image_file(r.image_path)
+            data = read_image(r.image_path)
         except FileNotFoundError:
-            missing += 1
-            continue
-        if not src.exists():
             missing += 1
             continue
         code = r.code
         dst = out / "images" / "train" / f"{code}.jpg"
-        shutil.copy(src, dst)
+        dst.write_bytes(data)
         lines, results = [], []
         for d in r.detections:
             cls = _class_for(d.label, r.variety_id)

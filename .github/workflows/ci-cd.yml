@@ -1,0 +1,142 @@
+# Pipeline da API da OASIS.
+#
+# A cada push e pull request: instala as dependências, roda os testes, constrói a imagem Docker (e confere
+# que ela sobe e responde /health) e procura segredos em todo o histórico do repositório.
+# Na branch main, se tudo passar, publica no Render e espera o commit novo aparecer em /health.
+name: CI/CD
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  testes:
+    name: Instalação e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instala as dependências
+        run: pip install -r requirements-dev.txt
+
+      - name: Verifica a sintaxe do código
+        run: python -m compileall -q app edge
+
+      - name: Roda os testes automatizados
+        run: python -m pytest -q --junitxml=relatorio-testes.xml
+
+      - name: Guarda o relatório dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-testes
+          path: relatorio-testes.xml
+          retention-days: 30
+
+  imagem:
+    name: Build da imagem Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Constrói a imagem (a mesma que o Render usa)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: oasis-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Confere que a imagem sobe e responde /health
+        run: |
+          docker run -d --name api -p 8000:8000 \
+            -e DATABASE_URL=sqlite:////srv/storage/ci.db -e OASIS_ADMIN_PASSWORD=SenhaDoPipeline2026 oasis-api:ci
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8000/health; then echo; docker logs api | tail -n 5; exit 0; fi
+            sleep 2
+          done
+          docker logs api
+          exit 1
+
+  segredos:
+    name: Varredura de segredos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # todo o histórico, não só o último commit
+
+      - name: Procura credenciais em todos os commits (gitleaks)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git /repo --config /repo/.gitleaks.toml --redact --no-banner --verbose
+
+  deploy:
+    name: Deploy no Render
+    needs: [testes, imagem, segredos]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # O segredo do deploy fica no ambiente "producao", liberado só para a branch main.
+    environment:
+      name: producao
+      url: ${{ vars.OASIS_API_URL }}
+    concurrency:
+      group: deploy-producao
+      cancel-in-progress: false
+    steps:
+      - name: Dispara o deploy deste commit no Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::Defina o secret RENDER_DEPLOY_HOOK_URL no ambiente producao (docs/nuvem.md)."
+            exit 1
+          fi
+          curl -fsS -X POST "${RENDER_DEPLOY_HOOK_URL}&ref=${GITHUB_SHA}" -o /dev/null
+          echo "Deploy do commit ${GITHUB_SHA} solicitado ao Render."
+
+      - name: Espera o commit novo entrar no ar
+        env:
+          OASIS_API_URL: ${{ vars.OASIS_API_URL }}
+        run: |
+          if [ -z "$OASIS_API_URL" ]; then
+            echo "::error::Defina a variável OASIS_API_URL (endereço da API no Render) no ambiente producao."
+            exit 1
+          fi
+          # O plano gratuito constrói a imagem do zero: pode levar alguns minutos.
+          for i in $(seq 1 75); do
+            body=$(curl -sS --max-time 30 "$OASIS_API_URL/health" || true)
+            commit=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit") or "")' 2>/dev/null || true)
+            if [ "$commit" = "$GITHUB_SHA" ]; then
+              echo "No ar: $body"
+              exit 0
+            fi
+            echo "Aguardando o deploy... (versão no ar: ${commit:-indisponível})"
+            sleep 20
+          done
+          echo "::error::O commit ${GITHUB_SHA} não entrou no ar em 25 minutos. Veja os logs do serviço no Render."
+          exit 1

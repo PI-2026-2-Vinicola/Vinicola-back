@@ -13,5 +13,6 @@ RUN useradd --create-home --uid 1000 oasis && mkdir -p storage models && chown -
 USER oasis
 
 EXPOSE 8000
+# PORT: definida pela hospedagem (o Render usa 10000); 8000 quando não definida (docker compose).
 # --proxy-headers: o IP e o esquema (https) vêm do proxy reverso, só se ele estiver em FORWARDED_ALLOW_IPS.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --no-server-header"]

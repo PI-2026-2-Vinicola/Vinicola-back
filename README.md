@@ -17,6 +17,62 @@ API, firmware e pipeline de visão computacional da OASIS, solução de IoT + IA
                                                           Banco de dados (Vinicola-bd)
 ```
 
+## Nuvem
+
+Sistema publicado em nuvem pública, com vários provedores (multicloud) e todos nos planos gratuitos. O detalhamento completo está em [`docs/nuvem.md`](docs/nuvem.md).
+
+**1. URL do sistema publicado**
+
+| O quê | Endereço |
+| --- | --- |
+| Sistema | _(URL da Vercel: variável `OASIS_SITE_URL` do repositório Vinicola-Front)_ |
+| API | _(URL do Render: variável `OASIS_API_URL`)_ |
+| Saúde | `<API>/health` |
+
+**2. Provedores, serviços e modelo de serviço**
+
+| Componente | Serviço | Modelo |
+| --- | --- | --- |
+| Frontend React | Vercel (Hobby) | PaaS |
+| API FastAPI + YOLO (Docker) | Render Web Service (Free) | PaaS |
+| Banco PostgreSQL | Supabase Database (Free) | PaaS (banco gerenciado) |
+| Fotos | Supabase Storage, API S3 (bucket privado) | PaaS (armazenamento de objetos) |
+| CI/CD e backups | GitHub Actions | SaaS |
+| Monitor e alerta | UptimeRobot | SaaS |
+
+A justificativa de cada escolha e do modelo de implantação está em [`docs/nuvem.md`, seção 2](docs/nuvem.md#2-provedores-serviços-e-modelo-de-serviço).
+
+**3. Diagrama da arquitetura**
+
+```mermaid
+flowchart LR
+  CAM["ESP32-CAM"] -- "HTTP (rede da fazenda)" --> GW["Gateway de edge"]
+  NAV["Navegador"] -- HTTPS --> FE["Vercel<br/>frontend"]
+  NAV -- "HTTPS · JWT" --> API["Render<br/>API + YOLO"]
+  GW -- "HTTPS · token" --> API
+  API -- "TLS · oasis_api" --> DB[("Supabase<br/>PostgreSQL")]
+  API -- "S3 assinado" --> ST[("Supabase Storage<br/>oasis-fotos")]
+  GHA["GitHub Actions"] -- "deploy hook" --> API
+  GHA -- "vercel deploy" --> FE
+  GHA -- "backup criptografado" --> DB
+  UP["UptimeRobot"] -- "/health" --> API
+```
+
+**4. Pipeline:** [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml). Cada push e pull request roda três jobs: instalação e testes (`pytest`), build da imagem Docker com teste do `/health` e varredura de segredos (gitleaks em todo o histórico). Na `main`, se tudo passar, o pipeline dispara o deploy no Render e espera o `/health` mostrar o commit novo. As execuções ficam na aba **Actions**. O backup diário fica em [`.github/workflows/backup.yml`](.github/workflows/backup.yml). A infraestrutura está em código: [`render.yaml`](render.yaml), `vercel.json` (frontend), [`Dockerfile`](Dockerfile) e [`deploy/supabase/papeis.sql`](deploy/supabase/papeis.sql).
+
+**5. Deploy do zero:** a ordem é Supabase, Render (Blueprint pelo `render.yaml`), ambientes e segredos do GitHub, Vercel e monitor. O passo a passo está em [`docs/nuvem.md`, seção 5](docs/nuvem.md#5-deploy-do-zero).
+
+**6. Variáveis de ambiente:** os modelos sem valores reais estão em [`.env.example`](.env.example). A diferença entre desenvolvimento e produção está em [`docs/nuvem.md`, seção 6](docs/nuvem.md#6-variáveis-de-ambiente). Os segredos de produção ficam só no Render e nos ambientes `producao` e `backup` do GitHub:
+- Render: `DATABASE_URL`, `S3_*`, `OASIS_ADMIN_*`, `CORS_ORIGINS`;
+- GitHub: `RENDER_DEPLOY_HOOK_URL`, `OASIS_BACKUP_*`.
+
+**7. Logs e saúde:**
+- `GET /health` responde o estado da API, do banco e o commit no ar, ou 503 se o banco cair;
+- o Render usa o `/health` como health check, e o UptimeRobot alerta por e-mail;
+- logs: Render → Logs (API), Vercel → Logs (site), Supabase → Logs & Analytics (banco e bucket), GitHub → Actions (pipeline e backups).
+
+**8. Custos por mês:** **US$ 0** no uso atual (3 câmeras e 5 usuários, tudo nos planos gratuitos). Com 10× mais usuários, **cerca de US$ 52**: Render Standard US$ 25 mais cerca de US$ 2 de banda excedente, e Supabase Pro US$ 25; Vercel e GitHub continuam gratuitos. As premissas estão em [`docs/nuvem.md`, seção 11](docs/nuvem.md#11-custos).
+
 ## Estrutura
 
 | Pasta | Camada | Conteúdo |
@@ -27,6 +83,7 @@ API, firmware e pipeline de visão computacional da OASIS, solução de IoT + IA
 | `ml/` | IA | Coleta (Embrapa WGISD), preparo do dataset, treino YOLO26, avaliação, exportação ONNX e fluxo de anotação |
 | `models/` | IA | Modelo publicado: `oasis-cachos.onnx` + ficha `oasis-cachos.json` (dados, métricas e limitações) |
 | `docs/yolo-embrapa.md` | IA | Documentação da integração: fontes da Embrapa, dataset, treinamento, métricas e inferência |
+| `render.yaml` · `.github/workflows/` | Nuvem | Infraestrutura da API no Render, pipeline de CI/CD e backup; guia em [`docs/nuvem.md`](docs/nuvem.md) |
 | `deploy/` · `docker-compose.prod.yml` | Produção | Caddy (HTTPS automático), backup e restauração; guia em [`docs/producao.md`](docs/producao.md) |
 | `tests/` | Qualidade | Testes Pytest cobrindo API, importação, análise de imagem, modelo ONNX, pipeline de dados, edge e integrações (com respostas simuladas) |
 
@@ -120,7 +177,12 @@ MySQL/MariaDB: `DATABASE_URL=mysql+pymysql://oasis:SENHA@localhost:3306/oasis` (
 | `OASIS_VARIETY_MODEL_PATH` | `models/oasis-variedades.onnx` | Classificador YOLO de variedades pela foto (+ ficha `.json`); vazio = sem previsão de variedade |
 | `OASIS_TIMEZONE` | `America/Recife` | Fuso usado nos filtros e gráficos por dia/hora |
 | `OASIS_FARM_NAME` | vazio | Nome da propriedade exibido no painel |
-| `STORAGE_DIR` | `storage` | Pasta das imagens e miniaturas |
+| `STORAGE_BACKEND` | `local` | Onde ficam as fotos: `local` (`STORAGE_DIR`) ou `s3` (Supabase Storage, R2, B2, MinIO, AWS) |
+| `STORAGE_DIR` | `storage` | Pasta das imagens e miniaturas (backend `local`) |
+| `S3_ENDPOINT_URL` / `S3_REGION` / `S3_BUCKET` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | vazios | Bucket das fotos (backend `s3`) |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `10` / `20` | Conexões mantidas com o banco (`3` / `2` no pooler gratuito do Supabase) |
+| `OASIS_MAX_CONCURRENT_ANALYSES` | `2` | Análises de imagem ao mesmo tempo; as demais esperam na fila (`1` em instâncias de 512 MB) |
+| `CLIENT_IP_HEADER` | vazio | Cabeçalho com o IP real do visitante definido pelo proxy (Render: `true-client-ip,cf-connecting-ip`) |
 | `MAX_UPLOAD_MB` / `MAX_IMPORT_MB` / `MAX_IMPORT_ROWS` | `8` / `10` / `20000` | Limites de envio |
 | `SENSOR_OFFLINE_FACTOR` | `3` | Offline após N × intervalo de captura sem comunicação |
 | `PUBLIC_READ` | `false` | Leitura sem login (proibido em produção) |

@@ -1,10 +1,11 @@
 import csv
 import io
+import logging
 from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Query as SAQuery
 from sqlalchemy.orm import Session, selectinload
@@ -16,8 +17,10 @@ from ..models import Reading, Sensor, User, Variety
 from ..schemas import ReadingOut, ReadingPage
 from ..services.audit import audit
 from ..services.readings import to_reading_out
-from ..services.storage import image_file
+from ..services.storage import StorageError, delete_images, read_image
 from ..services.timeutil import from_db, farm_tz, period_bounds
+
+log = logging.getLogger("oasis.readings")
 
 router = APIRouter(prefix="/readings", tags=["Leituras"])
 Sort = Literal["recentes", "antigas", "confianca_desc", "confianca_asc"]
@@ -182,19 +185,20 @@ def get_reading(code: str, db: Session = Depends(get_db), _: User | None = Depen
     return to_reading_out(get_reading_or_404(db, code))
 
 
-@router.get("/{code}/image", response_class=FileResponse)
+@router.get("/{code}/image", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}})
 def get_reading_image(code: str, size: Literal["full", "thumb"] = "full", db: Session = Depends(get_db), _: User | None = Depends(reader)):
     reading = get_reading_or_404(db, code)
     relative = reading.thumb_path if size == "thumb" and reading.thumb_path else reading.image_path
     if not relative:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Esta leitura não possui imagem armazenada.")
     try:
-        path = image_file(relative)
+        data = read_image(relative)
     except FileNotFoundError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Imagem não encontrada.")
-    if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "O arquivo da imagem não está mais disponível no servidor.")
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+    except StorageError:
+        log.exception("Falha ao ler a imagem da leitura %s", code)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "O armazenamento de imagens não respondeu. Tente novamente em instantes.")
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.delete("/{code}", status_code=status.HTTP_204_NO_CONTENT)
@@ -205,9 +209,5 @@ def delete_reading(code: str, request: Request, db: Session = Depends(get_db), a
     details = {"sensor": reading.sensor_id, "capturada_em": from_db(reading.captured_at).isoformat(), "origem": reading.source}
     db.delete(reading)
     audit(db, "leitura_excluida", actor=admin.email, target=reading.code, details=details, ip=client_ip(request))
-    for p in files:
-        try:
-            image_file(p).unlink(missing_ok=True)
-        except FileNotFoundError:
-            pass
+    delete_images(*files)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

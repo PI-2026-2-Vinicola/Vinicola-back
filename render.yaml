@@ -1,0 +1,64 @@
+# Infraestrutura da API da OASIS no Render, descrita em código (Blueprint). Guia completo: docs/nuvem.md
+#
+# Criação: Render → New → Blueprint → repositório Vinicola-back. As variáveis com "sync: false" são
+# segredos: o Render pede os valores na criação e eles ficam só no painel do Render, nunca no repositório.
+#
+# O deploy é disparado pelo GitHub Actions (.github/workflows/ci-cd.yml) depois que instalação, testes,
+# build da imagem e varredura de segredos passam na branch main. Por isso o deploy automático do próprio
+# Render fica desligado (autoDeployTrigger: "off").
+services:
+  - type: web
+    name: oasis-api
+    runtime: docker
+    plan: free                  # 512 MB e 0,1 CPU; hiberna após 15 min sem acesso (ver docs/nuvem.md)
+    region: virginia            # mesma região do projeto Supabase (East US), para o banco responder rápido
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health    # o Render só troca a versão no ar quando /health responde 200
+    autoDeployTrigger: "off"
+    envVars:
+      - key: ENVIRONMENT
+        value: production       # ativa as travas de produção (segredos fortes, /docs desligado)
+      - key: JWT_SECRET
+        generateValue: true     # gerado pelo Render (256 bits aleatórios)
+      # Banco gerenciado: Supabase → Connect → Session pooler (porta 5432), com o usuário oasis_api
+      # (deploy/supabase/papeis.sql). Formato: postgresql://oasis_api.<ref>:<senha>@<host-do-pooler>:5432/postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_POOL_SIZE
+        value: "3"              # o pooler gratuito aceita poucas conexões por cliente
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+      # Fotos: Supabase Storage pela API compatível com S3 (bucket privado oasis-fotos)
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: S3_BUCKET
+        value: oasis-fotos
+      - key: S3_ENDPOINT_URL    # https://<ref>.storage.supabase.co/storage/v1/s3
+        sync: false
+      - key: S3_REGION          # região exibida em Storage → S3 Configuration (ex.: us-east-1)
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      # Administrador criado na primeira inicialização (senha com 12 caracteres ou mais)
+      - key: OASIS_ADMIN_EMAIL
+        sync: false
+      - key: OASIS_ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS       # endereço HTTPS do frontend na Vercel
+        sync: false
+      - key: PUBLIC_READ
+        value: "false"
+      # O proxy do Render (Cloudflare) sobrescreve estes cabeçalhos com o IP real do visitante
+      - key: CLIENT_IP_HEADER
+        value: true-client-ip,cf-connecting-ip
+      # 0,1 CPU e 512 MB: uma análise de foto por vez (~8 s cada); as demais esperam na fila
+      - key: OASIS_MAX_CONCURRENT_ANALYSES
+        value: "1"
+      - key: OASIS_ANALYSIS_TIMEOUT_SECONDS
+        value: "60"
+      - key: OASIS_TIMEZONE
+        value: America/Recife

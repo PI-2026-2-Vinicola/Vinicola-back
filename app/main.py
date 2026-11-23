@@ -1,6 +1,7 @@
 """Aplicação FastAPI da OASIS."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -18,6 +19,7 @@ from .routers import auth, imports, ingest, integrations, readings, sensors, sta
 from .seed import bootstrap_admin, seed_catalog
 from .services.detector import get_detector
 from .services.external import ExternalServiceError
+from .services.storage import StorageError, get_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # O httpx registra a URL completa de cada requisição em INFO; a Read API Key do ThingSpeak vai na URL.
@@ -25,6 +27,20 @@ for noisy in ("httpx", "httpcore"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 log = logging.getLogger("oasis")
 settings = get_settings()
+# Commit em produção: o Render define RENDER_GIT_COMMIT; outras hospedagens podem usar OASIS_COMMIT.
+DEPLOYED_COMMIT = os.getenv("RENDER_GIT_COMMIT") or os.getenv("OASIS_COMMIT") or ""
+
+
+def _check_storage() -> None:
+    """Confere o destino das fotos na inicialização (só avisa: a API sobe mesmo assim)."""
+    if settings.storage_backend != "s3":
+        log.info("Imagens: disco local (%s)", settings.storage_dir)
+        return
+    try:
+        next(iter(get_storage().list("__verificacao__/")), None)
+        log.info("Imagens: bucket S3 %s em %s", settings.s3_bucket, settings.s3_endpoint_url)
+    except StorageError as exc:
+        log.error("Imagens: bucket S3 %s inacessível (%s). Confira S3_* e se o bucket existe.", settings.s3_bucket, exc)
 
 
 @asynccontextmanager
@@ -49,6 +65,7 @@ async def lifespan(_: FastAPI):
             # Outro processo (ex.: recarregador do uvicorn) inicializou o banco ao mesmo tempo.
             db.rollback()
     detector = get_detector()
+    _check_storage()
     log.info("OASIS API %s pronta — detector: %s (%s)", __version__, detector.name, getattr(detector, "version", ""))
     log.info(
         "Integrações — ThingSpeak: %s · Embrapa AgroAPI: %s",
@@ -96,8 +113,10 @@ async def security_headers(request: Request, call_next):
     if request.url.path.startswith("/api/") or request.url.path == "/health":
         # A API só devolve JSON, imagens e arquivos: nada pode ser executado nem embutido em outra página.
         response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
-    if request.url.scheme == "https":
-        # Atrás do proxy reverso o esquema vem de X-Forwarded-Proto (uvicorn --proxy-headers).
+    behind_https_proxy = settings.is_production and request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https"
+    if request.url.scheme == "https" or behind_https_proxy:
+        # Atrás de proxy o esquema vem de X-Forwarded-Proto (uvicorn --proxy-headers no Caddy; Render termina o TLS).
+        # Navegadores ignoram HSTS recebido por HTTP, então o cabeçalho não tem efeito se for forjado sem TLS.
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
@@ -170,5 +189,8 @@ def health():
             conn.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001 — qualquer falha de conexão deixa a API indisponível
         log.warning("Healthcheck: banco de dados indisponível (%s)", exc.__class__.__name__)
-        return JSONResponse(status_code=503, content={"status": "indisponivel", "database": "erro", "version": __version__})
-    return {"status": "ok", "database": "ok", "version": __version__}
+        return JSONResponse(status_code=503, content={"status": "indisponivel", "database": "erro", "version": __version__, "commit": DEPLOYED_COMMIT or None})
+    body = {"status": "ok", "database": "ok", "version": __version__}
+    if DEPLOYED_COMMIT:
+        body["commit"] = DEPLOYED_COMMIT  # o pipeline confere que o deploy publicou o commit enviado
+    return body

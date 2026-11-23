@@ -22,7 +22,9 @@ def make_engine(url: str):
             cur.close()
 
         return engine
-    return create_engine(url, pool_pre_ping=True, pool_size=10, max_overflow=20)
+    settings = get_settings()
+    return create_engine(url, pool_pre_ping=True, pool_size=settings.db_pool_size, max_overflow=settings.db_max_overflow,
+                         pool_recycle=1800)
 
 
 engine = make_engine(get_settings().database_url)

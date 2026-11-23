@@ -22,6 +22,7 @@ OASIS_API_URL=http://localhost:8000 uvicorn edge.gateway:app --host 0.0.0.0 --po
 | `OASIS_API_URL` | `http://localhost:8000` | API na nuvem |
 | `OASIS_EDGE_QUEUE` | `edge/queue` | Pasta da fila offline |
 | `OASIS_EDGE_RETRY_SECONDS` | `60` | Intervalo de reenvio |
+| `OASIS_EDGE_TIMEOUT_SECONDS` | `90` | Tempo de espera pela resposta da API. Sem resposta, ou com erro 5xx, a imagem vai para a fila |
 | `OASIS_MQTT_HOST` / `OASIS_MQTT_PORT` | — / `1883` | Ativa a assinatura MQTT |
 | `OASIS_TOKEN_S_001`, … | — | Token de cada sensor (modo MQTT) |
 

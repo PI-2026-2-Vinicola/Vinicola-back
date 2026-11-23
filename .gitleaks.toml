@@ -1,0 +1,22 @@
+# Varredura de segredos (gitleaks) usada pelo pipeline em todo o histórico do repositório.
+# Regras padrão do gitleaks + exceções revisadas uma a uma: são valores fictícios, não credenciais.
+title = "OASIS"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valores fictícios revisados (testes e exemplos de documentação)"
+regexTarget = "line"
+regexes = [
+  # senha de teste da validação de produção (tests/test_production.py)
+  '''oasis_admin_password="UmaSenhaLonga2026"''',
+  # testes da integração com a Embrapa passam credenciais vazias de propósito
+  '''embrapa_consumer_secret=""''',
+  # token de exemplo de desenvolvimento citado em READMEs antigos (nunca foi credencial de produção)
+  '''X-Device-Token: osais-dev-s-001''',
+  # chave fictícia de teste (base64 de "key-de-teste-com-32-bytes-exatos"), substituída por uma gerada no teste
+  '''DATA_KEY = "a2V5LWRlLXRlc3RlLWNvbS0zMi1ieXRlcy1leGF0b3M="''',
+  # o gitleaks também decodifica o base64 e analisa o texto: mesma chave fictícia
+  '''key-de-teste-com-32-bytes-exatos''',
+]

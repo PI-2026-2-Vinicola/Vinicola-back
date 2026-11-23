@@ -31,6 +31,8 @@ from .preprocess import preprocess
 API_URL = os.getenv("OASIS_API_URL", "http://localhost:8000").rstrip("/")
 QUEUE_DIR = Path(os.getenv("OASIS_EDGE_QUEUE", Path(__file__).parent / "queue"))
 RETRY_SECONDS = int(os.getenv("OASIS_EDGE_RETRY_SECONDS", "60"))
+# Tempo de espera pela API. Numa instância pequena (plano gratuito), a análise leva ~10 s e pode haver fila.
+FORWARD_TIMEOUT = float(os.getenv("OASIS_EDGE_TIMEOUT_SECONDS", "90"))
 MQTT_HOST = os.getenv("OASIS_MQTT_HOST")
 MQTT_PORT = int(os.getenv("OASIS_MQTT_PORT", "1883"))
 
@@ -40,7 +42,7 @@ QUEUE_DIR.mkdir(parents=True, exist_ok=True)
 stats = {"received": 0, "discarded": 0, "forwarded": 0, "queued": 0}
 
 
-def forward(meta: dict, image: bytes, timeout: float = 20.0) -> httpx.Response:
+def forward(meta: dict, image: bytes, timeout: float = FORWARD_TIMEOUT) -> httpx.Response:
     data = {k: str(v) for k, v in meta.items() if k in FORWARDED and v not in (None, "")}
     headers = {"X-Device-Token": meta.get("token") or ""}
     return httpx.post(f"{API_URL}/api/v1/ingest", data=data, files={"image": ("captura.jpg", image, "image/jpeg")}, headers=headers, timeout=timeout)
@@ -79,11 +81,15 @@ def handle_capture(meta: dict, raw: bytes) -> tuple[int, dict]:
     meta.setdefault("captured_at", datetime.now(timezone.utc).isoformat())
     try:
         res = forward(meta, result.image)
-        stats["forwarded"] += 1
-        return res.status_code, res.json() if res.headers.get("content-type", "").startswith("application/json") else {"status": res.status_code}
     except httpx.HTTPError:
         key = enqueue(meta, result.image)
         return 202, {"accepted": True, "queued": key, **info}
+    if res.status_code >= 500:
+        # API reiniciando, fila de análise cheia ou armazenamento fora do ar: guarda e reenvia depois.
+        key = enqueue(meta, result.image)
+        return 202, {"accepted": True, "queued": key, "apiStatus": res.status_code, **info}
+    stats["forwarded"] += 1
+    return res.status_code, res.json() if res.headers.get("content-type", "").startswith("application/json") else {"status": res.status_code}
 
 
 def retry_loop(stop: threading.Event) -> None:
