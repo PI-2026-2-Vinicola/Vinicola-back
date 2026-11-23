@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .catalog import VARIETIES
 from .config import get_settings
-from .models import User, Variety
+from .models import ImportJob, Organization, Sensor, User, Variety
 from .security import hash_secret, new_password
 from .services.audit import audit
 
@@ -31,13 +31,17 @@ def seed_catalog(db: Session) -> int:
 
 def bootstrap_admin(db: Session) -> str | None:
     """
-    Cria o primeiro administrador quando o banco não tem usuários.
+    Cria o administrador inicial quando o banco não tem nenhum administrador (por exemplo, no primeiro
+    início da API, mesmo que `demo-seguranca` já tenha criado usuários de organizações).
     A senha vem de OASIS_ADMIN_PASSWORD; se vazia, uma senha aleatória é gerada e exibida uma única vez.
     Retorna a senha gerada (ou None).
     """
-    if db.query(User.id).first():
+    if db.query(User.id).filter(User.role == "admin").first():
         return None
     settings = get_settings()
+    if db.query(User.id).filter(User.email == settings.oasis_admin_email.lower()).first():
+        log.warning("Nenhum administrador ativo, mas %s já é usuário de outro perfil: crie o administrador pela CLI.", settings.oasis_admin_email)
+        return None
     password = settings.oasis_admin_password or new_password()
     generated = not settings.oasis_admin_password
     db.add(User(name=settings.oasis_admin_name, email=settings.oasis_admin_email.lower(), role="admin", password_hash=hash_secret(password)))
@@ -51,3 +55,28 @@ def bootstrap_admin(db: Session) -> str | None:
     else:
         log.info("Administrador inicial %s criado com a senha definida em OASIS_ADMIN_PASSWORD.", settings.oasis_admin_email)
     return password if generated else None
+
+
+def default_organization(db: Session) -> Organization:
+    """A organização mais antiga: recebe registros criados sem organização informada."""
+    org = db.query(Organization).order_by(Organization.id).first()
+    if org is None:
+        org = Organization(name=get_settings().oasis_farm_name.strip() or "Organização padrão")
+        db.add(org)
+        db.flush()
+    return org
+
+
+def ensure_default_organization(db: Session) -> Organization:
+    """
+    Garante que exista ao menos uma organização e que nenhum sensor, usuário não administrador ou
+    importação fique sem organização (bancos criados antes do isolamento por organização). Idempotente.
+    """
+    org = default_organization(db)
+    moved = db.query(Sensor).filter(Sensor.organization_id.is_(None)).update({Sensor.organization_id: org.id}, synchronize_session=False)
+    moved += db.query(User).filter(User.organization_id.is_(None), User.role != "admin").update({User.organization_id: org.id}, synchronize_session=False)
+    db.query(ImportJob).filter(ImportJob.organization_id.is_(None)).update({ImportJob.organization_id: org.id}, synchronize_session=False)
+    db.commit()
+    if moved:
+        log.info("Registros sem organização associados a %s (%d).", org.name, moved)
+    return org

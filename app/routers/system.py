@@ -13,10 +13,9 @@ from ..services.detector import OnnxYoloDetector, YoloDetector, get_detector
 from ..services.sensors import status_counts
 from ..services.storage import storage_size_mb
 from ..services.timeutil import from_db, period_bounds
-from ..deps import require_roles
+from ..rbac import require
 
 router = APIRouter(tags=["Sistema"])
-admin_only = require_roles("admin")
 
 
 @router.get("/varieties", response_model=list[VarietyOut], response_model_by_alias=True)
@@ -47,7 +46,7 @@ def public_overview(db: Session = Depends(get_db)):
 
 
 @router.get("/system/status", response_model=SystemStatus, response_model_by_alias=True)
-def system_status(db: Session = Depends(get_db), _: User = Depends(admin_only)):
+def system_status(db: Session = Depends(get_db), _: User = Depends(require("sistema", "R"))):
     settings = get_settings()
     detector = get_detector()
     try:
@@ -84,7 +83,7 @@ def audit_log(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
     db: Session = Depends(get_db),
-    _: User = Depends(admin_only),
+    _: User = Depends(require("auditoria", "R")),
 ):
     q = db.query(AuditLog)
     if action:

@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from ..catalog import VALE_MUNICIPALITIES
 from ..config import get_settings
 from ..database import get_db
-from ..deps import client_ip, reader
+from ..deps import client_ip
+from ..rbac import require
 from ..models import User
 from ..schemas import (
     AgritecCultureOut,
@@ -73,7 +74,7 @@ def integrations_status(ts: ThingSpeakService = Depends(get_thingspeak), em: Emb
 def thingspeak_feed(
     period: Literal["recent", "24h", "7d", "30d"] = "recent",
     results: int = Query(default=100, ge=10, le=1000, description="Registros no período `recent`"),
-    _: User | None = Depends(reader),
+    _: User | None = Depends(require("medicoes", "R", public_read=True)),
     ts: ThingSpeakService = Depends(get_thingspeak),
 ):
     """Registros do canal configurado no ThingSpeak: últimos N ou amostragem de 24 h, 7 ou 30 dias."""
@@ -103,9 +104,10 @@ def embrapa_question(doc_id: str = Path(max_length=48), em: EmbrapaService = Dep
 
 
 @router.get("/readings/{code}/embrapa", response_model=ReadingGuidanceOut, response_model_by_alias=True, dependencies=limited, tags=["Leituras"])
-def reading_guidance(code: str = Path(max_length=16), db: Session = Depends(get_db), _: User | None = Depends(reader), em: EmbrapaService = Depends(get_embrapa)):
+def reading_guidance(request: Request, code: str = Path(max_length=16), db: Session = Depends(get_db),
+                     user: User | None = Depends(require("leituras", "R", public_read=True)), em: EmbrapaService = Depends(get_embrapa)):
     """Orientações da Embrapa (RespondeAgro, livro de uva) para as anomalias detectadas na leitura."""
-    reading = get_reading_or_404(db, code)
+    reading = get_reading_or_404(db, code, request, user)
     found = [(d.label, d.confidence) for d in reading.detections if d.kind == "anomalia"]
     return em.guidance(reading.code or code.upper(), reading.model_version, strongest_anomalies(found, ANOMALY_MIN_CONFIDENCE))
 

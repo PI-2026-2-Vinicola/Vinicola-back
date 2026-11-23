@@ -8,7 +8,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from ..catalog import ANOMALY_TEXT, GENERIC_CLUSTER_CLASS, MILD_ANOMALIES, MODEL_CLASSES, MODEL_VARIETY_NAMES, VARIETIES, variety_from_class
 from ..config import get_settings
 from ..database import get_db
-from ..deps import authorize_device, current_user, current_user_optional, device_token_header
+from ..deps import current_user, current_user_optional, device_token_header
 from ..models import EnvironmentReading, Reading, User, Variety
 from ..schemas import (
     AnalysisComponentOut, AnalysisModelOut, ModelCardOut, ModelClassOut, ModelDatasetOut, ModelMetricsOut, ReadingOut, VarietyClassOut,
@@ -29,7 +29,7 @@ from ..services.readings import persist_reading, to_reading_out
 from ..services.analysis_queue import AnalysisBusy, run_limited
 from ..services.storage import InvalidImage, StorageError, delete_images, load_image, save_image
 from ..services.timeutil import as_utc, utcnow
-from .sensors import apply_device_status, get_sensor_or_404
+from .sensors import apply_device_status, authorize_device_or_user, get_sensor_or_404
 
 router = APIRouter(tags=["Ingestão"])
 log = logging.getLogger("oasis.ingest")
@@ -192,6 +192,7 @@ async def _read_limited(upload: UploadFile, limit_mb: int) -> bytes:
 
 @router.post("/ingest", response_model=ReadingOut, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)
 async def ingest(
+    request: Request,
     sensor_id: str = Form(..., max_length=20),
     image: UploadFile = File(...),
     captured_at: datetime | None = Form(default=None),
@@ -210,7 +211,7 @@ async def ingest(
     """
     started = time.perf_counter()
     sensor = get_sensor_or_404(db, sensor_id)
-    authorize_device(sensor, token, user)
+    authorize_device_or_user(db, request, sensor, token, user, "leituras", "C")
     if not sensor.active:
         raise HTTPException(status.HTTP_409_CONFLICT, f"O sensor {sensor.id} está desativado.")
 

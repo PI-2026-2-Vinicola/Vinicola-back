@@ -5,8 +5,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import authorize_device, client_ip, current_user_optional, device_token_header, reader, require_roles
+from ..deps import authorize_device, client_ip, current_user_optional, device_token_header
 from ..models import EnvironmentReading, Reading, Sensor, SensorTelemetry, User, Variety
+from ..rbac import allowed, check_organization, deny, require, tenant
+from ..seed import default_organization
 from ..schemas import EnvironmentIn, EnvironmentPoint, HeartbeatIn, SensorCreateIn, SensorOut, SensorTokenOut, SensorUpdateIn, TelemetryPoint
 from ..security import hash_token, new_device_token
 from ..services.audit import audit
@@ -14,7 +16,6 @@ from ..services.sensors import sensor_stats, to_sensor_out
 from ..services.timeutil import as_utc, from_db, period_bounds, utcnow
 
 router = APIRouter(prefix="/sensors", tags=["Sensores"])
-admin_only = require_roles("admin")
 
 
 def get_sensor_or_404(db: Session, sensor_id: str) -> Sensor:
@@ -24,45 +25,75 @@ def get_sensor_or_404(db: Session, sensor_id: str) -> Sensor:
     return sensor
 
 
+def get_sensor_for(db: Session, sensor_id: str, request: Request, user: User | None, resource: str = "sensores") -> Sensor:
+    """Sensor existente e da organização do usuário (403 e auditoria se for de outra)."""
+    sensor = get_sensor_or_404(db, sensor_id)
+    check_organization(db, request, user, sensor.organization_id, resource, sensor.id)
+    return sensor
+
+
+def authorize_device_or_user(db: Session, request: Request, sensor: Sensor, token: str | None, user: User | None, resource: str, action: str) -> None:
+    """Dispositivo com o token do próprio sensor, ou usuário com a operação na matriz e da mesma organização."""
+    authorize_device(sensor, token, user)
+    if user is not None:
+        if not allowed(user.role, resource, action):
+            raise deny(db, request, user, "Acesso negado: seu perfil não pode registrar dados deste sensor.",
+                       {"recurso": resource, "operacao": action, "perfil": user.role})
+        check_organization(db, request, user, sensor.organization_id, resource, sensor.id)
+
+
 def _check_variety(db: Session, variety_id: str) -> None:
     if not db.get(Variety, variety_id):
         raise HTTPException(422, f"Variedade “{variety_id}” não cadastrada.")
 
 
 @router.get("", response_model=list[SensorOut], response_model_by_alias=True)
-def list_sensors(db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    sensors = db.query(Sensor).order_by(Sensor.id).all()
-    stats = sensor_stats(db)
+def list_sensors(db: Session = Depends(get_db), user: User | None = Depends(require("sensores", "R", public_read=True))):
+    q = db.query(Sensor).order_by(Sensor.id)
+    scope = tenant(user)
+    if scope is not None:
+        q = q.filter(Sensor.organization_id == scope)
+    sensors = q.all()
+    stats = sensor_stats(db, [s.id for s in sensors])
     now = utcnow()
     return [to_sensor_out(s, stats, now) for s in sensors]
 
 
 @router.get("/{sensor_id}", response_model=SensorOut, response_model_by_alias=True)
-def get_sensor(sensor_id: str, db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    sensor = get_sensor_or_404(db, sensor_id)
+def get_sensor(sensor_id: str, request: Request, db: Session = Depends(get_db), user: User | None = Depends(require("sensores", "R", public_read=True))):
+    sensor = get_sensor_for(db, sensor_id, request, user)
     return to_sensor_out(sensor, sensor_stats(db, [sensor.id]))
 
 
 @router.post("", response_model=SensorTokenOut, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)
-def create_sensor(body: SensorCreateIn, request: Request, db: Session = Depends(get_db), admin: User = Depends(admin_only)):
+def create_sensor(body: SensorCreateIn, request: Request, db: Session = Depends(get_db), admin: User = Depends(require("sensores", "C"))):
     if db.get(Sensor, body.id):
         raise HTTPException(status.HTTP_409_CONFLICT, f"Já existe um sensor com o código {body.id}.")
     _check_variety(db, body.variety_id)
+    scope = tenant(admin)
+    if scope is None:
+        organization_id = body.organization_id or default_organization(db).id
+    else:
+        if body.organization_id and body.organization_id != scope:
+            check_organization(db, request, admin, body.organization_id, "sensores", body.id)
+        organization_id = scope
     token = new_device_token()
     data = body.model_dump()
     sensor = Sensor(
         id=data["id"], name=data["name"].strip(), block=data["block"].strip(), location=data["location"].strip(),
         latitude=data["lat"], longitude=data["lng"], variety_id=data["variety_id"], device=data["device"], firmware=data["firmware"],
         capture_interval_min=data["capture_interval_min"], installed_at=data["installed_at"], active=True, device_token_hash=hash_token(token),
+        organization_id=organization_id,
     )
     db.add(sensor)
-    audit(db, "sensor_criado", actor=admin.email, target=sensor.id, details={"nome": sensor.name, "bloco": sensor.block}, ip=client_ip(request))
+    audit(db, "sensor_criado", actor=admin.email, target=sensor.id, details={"nome": sensor.name, "bloco": sensor.block, "organizacao": organization_id}, ip=client_ip(request))
+    db.refresh(sensor)
     return SensorTokenOut(sensor=to_sensor_out(sensor, {}), device_token=token)
 
 
 @router.patch("/{sensor_id}", response_model=SensorOut, response_model_by_alias=True)
-def update_sensor(sensor_id: str, body: SensorUpdateIn, request: Request, db: Session = Depends(get_db), admin: User = Depends(admin_only)):
-    sensor = get_sensor_or_404(db, sensor_id)
+def update_sensor(sensor_id: str, body: SensorUpdateIn, request: Request, db: Session = Depends(get_db), admin: User = Depends(require("sensores", "U"))):
+    sensor = get_sensor_for(db, sensor_id, request, admin)
     changes = body.model_dump(exclude_unset=True)
     if changes.get("variety_id"):
         _check_variety(db, changes["variety_id"])
@@ -83,9 +114,9 @@ def update_sensor(sensor_id: str, body: SensorUpdateIn, request: Request, db: Se
 
 
 @router.post("/{sensor_id}/token", response_model=SensorTokenOut, response_model_by_alias=True)
-def regenerate_token(sensor_id: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(admin_only)):
+def regenerate_token(sensor_id: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(require("sensores", "U"))):
     """Gera um novo token para o dispositivo. O anterior deixa de funcionar imediatamente."""
-    sensor = get_sensor_or_404(db, sensor_id)
+    sensor = get_sensor_for(db, sensor_id, request, admin)
     token = new_device_token()
     sensor.device_token_hash = hash_token(token)
     audit(db, "token_sensor_regenerado", actor=admin.email, target=sensor.id, ip=client_ip(request))
@@ -93,13 +124,13 @@ def regenerate_token(sensor_id: str, request: Request, db: Session = Depends(get
 
 
 @router.delete("/{sensor_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_sensor(sensor_id: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(admin_only)):
+def delete_sensor(sensor_id: str, request: Request, db: Session = Depends(get_db), admin: User = Depends(require("sensores", "D"))):
     """
     Exclui um sensor sem análises. As medições ambientais e a telemetria do dispositivo saem junto
     (ON DELETE CASCADE no esquema). Um sensor com análises não é excluído, para preservar o histórico:
     desative-o ou exclua antes as análises.
     """
-    sensor = get_sensor_or_404(db, sensor_id)
+    sensor = get_sensor_for(db, sensor_id, request, admin)
     analyses = db.query(func.count(Reading.id)).filter(Reading.sensor_id == sensor.id).scalar() or 0
     if analyses:
         raise HTTPException(
@@ -128,13 +159,14 @@ def _record_environment(db: Session, sensor: Sensor, at: datetime, values: dict,
 def heartbeat(
     sensor_id: str,
     body: HeartbeatIn,
+    request: Request,
     db: Session = Depends(get_db),
     token: str | None = Depends(device_token_header),
     user: User | None = Depends(current_user_optional),
 ):
     """Sinal de vida do dispositivo: bateria, sinal Wi-Fi, firmware e (opcional) temperatura e umidade."""
     sensor = get_sensor_or_404(db, sensor_id)
-    authorize_device(sensor, token, user)
+    authorize_device_or_user(db, request, sensor, token, user, "sensores", "U")
     now = utcnow()
     apply_device_status(db, sensor, body.battery, body.signal, body.firmware, now)
     _record_environment(db, sensor, now, {"temperature_c": body.temperature_c, "humidity_pct": body.humidity_pct}, "sensor")
@@ -158,12 +190,13 @@ def apply_device_status(db: Session, sensor: Sensor, battery: int | None, signal
 def post_environment(
     sensor_id: str,
     body: EnvironmentIn,
+    request: Request,
     db: Session = Depends(get_db),
     token: str | None = Depends(device_token_header),
     user: User | None = Depends(current_user_optional),
 ):
     sensor = get_sensor_or_404(db, sensor_id)
-    authorize_device(sensor, token, user)
+    authorize_device_or_user(db, request, sensor, token, user, "medicoes", "C")
     at = as_utc(body.measured_at) if body.measured_at else utcnow()
     if at > utcnow():
         raise HTTPException(422, "Data da medição no futuro.")
@@ -179,13 +212,14 @@ def post_environment(
 @router.get("/{sensor_id}/environment", response_model=list[EnvironmentPoint], response_model_by_alias=True)
 def list_environment(
     sensor_id: str,
+    request: Request,
     days: int | None = Query(default=7, ge=1, le=366),
     date_from: date | None = Query(default=None, alias="dateFrom"),
     date_to: date | None = Query(default=None, alias="dateTo"),
     db: Session = Depends(get_db),
-    _: User | None = Depends(reader),
+    user: User | None = Depends(require("medicoes", "R", public_read=True)),
 ):
-    sensor = get_sensor_or_404(db, sensor_id)
+    sensor = get_sensor_for(db, sensor_id, request, user, "medicoes")
     start, end = period_bounds(days, date_from, date_to)
     q = db.query(EnvironmentReading).filter(EnvironmentReading.sensor_id == sensor.id, EnvironmentReading.measured_at <= end)
     if start:
@@ -198,8 +232,9 @@ def list_environment(
 
 
 @router.get("/{sensor_id}/telemetry", response_model=list[TelemetryPoint], response_model_by_alias=True)
-def list_telemetry(sensor_id: str, days: int = Query(default=7, ge=1, le=366), db: Session = Depends(get_db), _: User | None = Depends(reader)):
-    sensor = get_sensor_or_404(db, sensor_id)
+def list_telemetry(sensor_id: str, request: Request, days: int = Query(default=7, ge=1, le=366), db: Session = Depends(get_db),
+                   user: User | None = Depends(require("sensores", "R", public_read=True))):
+    sensor = get_sensor_for(db, sensor_id, request, user)
     start, _end = period_bounds(days, None, None)
     rows = (
         db.query(SensorTelemetry)

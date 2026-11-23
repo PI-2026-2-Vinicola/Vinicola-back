@@ -8,7 +8,8 @@ from ..config import get_settings
 from ..database import get_db
 from ..deps import client_ip, current_user
 from ..models import User
-from ..schemas import LoginIn, PasswordChangeIn, TokenOut, UserOut
+from ..rbac import ACTION_LABEL, MATRIX, ROLE_LABEL, me_out
+from ..schemas import LoginIn, MeOut, PasswordChangeIn, TokenOut
 from ..security import create_access_token, hash_secret, verify_secret
 from ..services.audit import audit
 from ..services.timeutil import utcnow
@@ -52,12 +53,25 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     user.last_login_at = utcnow()
     token, expires = create_access_token(user.email, user.role)
     audit(db, "login", actor=user.email, ip=ip)
-    return TokenOut(access_token=token, expires_in=expires, user=UserOut.model_validate(user))
+    return TokenOut(access_token=token, expires_in=expires, user=me_out(user))
 
 
-@router.get("/me", response_model=UserOut, response_model_by_alias=True)
+@router.get("/me", response_model=MeOut, response_model_by_alias=True)
 def me(user: User = Depends(current_user)):
-    return user
+    """Usuário da sessão, com organização, perfil e permissões da matriz RBAC."""
+    return me_out(user)
+
+
+@router.get("/matrix", tags=["Autenticação"])
+def permission_matrix(_: User = Depends(current_user)):
+    """Matriz de permissões aplicada pela API (perfis × recursos × operações C/R/U/D e alcance)."""
+    return {
+        "roles": [{"id": r, "label": label} for r, label in ROLE_LABEL.items()],
+        "actions": ACTION_LABEL,
+        "resources": [
+            {"id": rid, "label": label, "permissions": perms, "scope": scope} for rid, (label, perms, scope) in MATRIX.items()
+        ],
+    }
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)

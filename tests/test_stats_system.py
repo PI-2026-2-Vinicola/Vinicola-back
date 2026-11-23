@@ -64,7 +64,9 @@ def test_system_status_and_audit(client, admin_headers, gestor_headers):
     st = client.get(f"{API}/system/status", headers=admin_headers).json()
     assert st["detector"] == "color" and st["database"] in ("sqlite", "postgresql", "mysql") and st["counts"]["usuarios"] >= 2
     audit = client.get(f"{API}/audit", headers=admin_headers).json()
-    actions = {a["action"] for a in audit["items"]}
-    assert {"login", "sensor_criado"} <= actions and audit["total"] >= len(audit["items"])
+    assert audit["items"] and audit["total"] >= len(audit["items"])
+    for action in ("login", "sensor_criado"):  # filtrado: outras suítes também gravam na auditoria
+        found = client.get(f"{API}/audit", params={"action": action}, headers=admin_headers).json()
+        assert found["total"] >= 1 and {a["action"] for a in found["items"]} == {action}
     logins = client.get(f"{API}/audit", params={"action": "login", "pageSize": 1}, headers=admin_headers).json()
     assert logins["pageSize"] == 1 and logins["items"][0]["action"] == "login"

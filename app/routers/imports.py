@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_db
-from ..deps import client_ip, require_roles
+from ..deps import client_ip
+from ..rbac import check_organization, require, tenant
+from ..seed import default_organization
 from ..models import ImportJob, User
 from ..schemas import ImportJobOut, ImportKind, ImportPreviewOut, RowError
 from ..services import imports as svc
@@ -24,7 +26,6 @@ from ..services.audit import audit
 from ..services.timeutil import from_db
 
 router = APIRouter(prefix="/imports", tags=["Importação"])
-managers = require_roles("admin", "gestor")
 log = logging.getLogger("oasis.imports")
 
 KIND_LABEL = {"readings": "leituras", "sensors": "sensores", "environment": "medições ambientais"}
@@ -58,8 +59,23 @@ def _job_out(job: ImportJob, users: dict[int, str] | None = None) -> ImportJobOu
     )
 
 
+def _target_organization(db: Session, request: Request, user: User, kind: str, organization_id: int | None) -> int | None:
+    """
+    Organização em que a importação atua. Gestor: sempre a própria. Administrador: a informada; sem ela,
+    sensores novos vão para a organização padrão e leituras/medições alcançam qualquer sensor.
+    """
+    scope = tenant(user)
+    if scope is not None:
+        if organization_id and organization_id != scope:
+            check_organization(db, request, user, organization_id, "importacoes", "importação")
+        return scope
+    if organization_id:
+        return organization_id
+    return default_organization(db).id if kind == "sensors" else None
+
+
 @router.get("/templates/{kind}")
-def template(kind: ImportKind, _: User = Depends(managers)):
+def template(kind: ImportKind, _: User = Depends(require("importacoes", "R"))):
     """Modelo CSV com as colunas esperadas para cada tipo de importação."""
     return Response(
         content=("﻿" + svc.template_csv(kind)).encode("utf-8"),
@@ -69,11 +85,14 @@ def template(kind: ImportKind, _: User = Depends(managers)):
 
 
 @router.post("/preview", response_model=ImportPreviewOut, response_model_by_alias=True)
-async def preview(kind: ImportKind = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db), _: User = Depends(managers)):
+async def preview(request: Request, kind: ImportKind = Form(...), file: UploadFile = File(...),
+                  organization_id: int | None = Form(default=None, alias="organizationId"), db: Session = Depends(get_db),
+                  user: User = Depends(require("importacoes", "C"))):
     """Valida o arquivo e mostra o que seria importado — nada é gravado."""
     name, data = await _read_file(file)
+    scope = _target_organization(db, request, user, kind, organization_id)
     try:
-        result = svc.analyze_file(db, kind, name, data)
+        result = svc.analyze_file(db, kind, name, data, scope)
     except svc.ImportError_ as exc:
         raise HTTPException(422, str(exc))
     return ImportPreviewOut(
@@ -88,22 +107,26 @@ async def run_import(
     kind: ImportKind = Form(...),
     file: UploadFile = File(...),
     on_duplicate: Literal["skip", "update"] = Form(default="skip", alias="onDuplicate"),
+    organization_id: int | None = Form(default=None, alias="organizationId"),
     db: Session = Depends(get_db),
-    user: User = Depends(managers),
+    user: User = Depends(require("importacoes", "C")),
 ):
     """Valida novamente e grava as linhas válidas em uma única transação. Toda execução fica registrada."""
     name, data = await _read_file(file)
     ip = client_ip(request)
+    scope = _target_organization(db, request, user, kind, organization_id)
+    job_org = scope if scope is not None else tenant(user)
     try:
-        result = svc.analyze_file(db, kind, name, data)
+        result = svc.analyze_file(db, kind, name, data, scope)
     except svc.ImportError_ as exc:
-        job = ImportJob(kind=kind, filename=name, status="falhou", errors_json=json.dumps([{"row": 0, "field": None, "message": str(exc)}], ensure_ascii=False), created_by=user.id)
+        job = ImportJob(kind=kind, filename=name, status="falhou", errors_json=json.dumps([{"row": 0, "field": None, "message": str(exc)}], ensure_ascii=False),
+                        created_by=user.id, organization_id=job_org)
         db.add(job)
         audit(db, "importacao_falhou", actor=user.email, target=name, details={"tipo": kind, "erro": str(exc)}, ip=ip)
         raise HTTPException(422, str(exc))
 
     try:
-        inserted, updated = svc.persist(db, result, on_duplicate, user.id)
+        inserted, updated = svc.persist(db, result, on_duplicate, user.id, scope)
         db.flush()
     except IntegrityError:
         db.rollback()
@@ -119,6 +142,7 @@ async def run_import(
     job = ImportJob(
         kind=kind, filename=name, status=job_status, total_rows=result.total, inserted=inserted, updated=updated,
         duplicates=skipped, invalid=result.invalid_rows, errors_json=json.dumps(result.errors, ensure_ascii=False), created_by=user.id,
+        organization_id=job_org,
     )
     db.add(job)
     audit(
@@ -130,16 +154,21 @@ async def run_import(
 
 
 @router.get("", response_model=list[ImportJobOut], response_model_by_alias=True)
-def list_jobs(db: Session = Depends(get_db), _: User = Depends(managers)):
-    jobs = db.query(ImportJob).order_by(ImportJob.created_at.desc(), ImportJob.id.desc()).limit(50).all()
+def list_jobs(db: Session = Depends(get_db), user: User = Depends(require("importacoes", "R"))):
+    q = db.query(ImportJob)
+    scope = tenant(user)
+    if scope is not None:
+        q = q.filter(ImportJob.organization_id == scope)
+    jobs = q.order_by(ImportJob.created_at.desc(), ImportJob.id.desc()).limit(50).all()
     users = dict(db.query(User.id, User.name).filter(User.id.in_({j.created_by for j in jobs if j.created_by})).all())
     return [_job_out(j, users) for j in jobs]
 
 
 @router.get("/{job_id}", response_model=ImportJobOut, response_model_by_alias=True)
-def get_job(job_id: int, db: Session = Depends(get_db), _: User = Depends(managers)):
+def get_job(job_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require("importacoes", "R"))):
     job = db.get(ImportJob, job_id)
     if not job:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Importação não encontrada.")
+    check_organization(db, request, user, job.organization_id, "importacoes", str(job.id))
     users = dict(db.query(User.id, User.name).filter(User.id == job.created_by).all()) if job.created_by else {}
     return _job_out(job, users)

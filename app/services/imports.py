@@ -217,6 +217,7 @@ class Context:
     sensors: dict[str, Sensor]
     varieties: dict[str, str]  # chave normalizada (id ou nome) → id
     seen: set[tuple] = field(default_factory=set)
+    foreign_sensors: set[str] = field(default_factory=set)  # códigos já usados por outra organização
 
 
 def _variety(ctx: Context, row: dict, key: str = "variety_id", required: bool = False) -> str | None:
@@ -235,7 +236,8 @@ def _sensor(ctx: Context, row: dict) -> Sensor:
     sid = _text(row, "sensor_id", 20, required=True).upper()  # type: ignore[union-attr]
     sensor = ctx.sensors.get(sid)
     if not sensor:
-        raise FieldError("sensor_id", f"sensor “{sid}” não cadastrado")
+        # sensor de outra organização: mesma mensagem de inexistente, para não revelar dados alheios
+        raise FieldError("sensor_id", f"sensor “{sid}” não cadastrado nesta organização" if ctx.foreign_sensors else f"sensor “{sid}” não cadastrado")
     return sensor
 
 
@@ -289,6 +291,8 @@ def validate_sensor(ctx: Context, row: dict) -> tuple[tuple, dict]:
     sid = _text(row, "id", 20, required=True).upper()  # type: ignore[union-attr]
     if not SENSOR_ID_RE.match(sid):
         raise FieldError("id", "use 2 a 20 caracteres: letras, números, '-' ou '_'")
+    if sid in ctx.foreign_sensors:
+        raise FieldError("id", "código já usado por outra organização")
     lat = _number(row, "latitude", -90, 90)
     lng = _number(row, "longitude", -180, 180)
     if (lat is None) != (lng is None):
@@ -335,14 +339,17 @@ VALIDATORS: dict[str, Callable[[Context, dict], tuple[tuple, dict]]] = {
 }
 
 
-def _context(db: Session) -> Context:
-    sensors = {s.id: s for s in db.query(Sensor).all()}
+def _context(db: Session, organization_id: int | None = None) -> Context:
+    """Sensores alcançáveis: todos (administrador) ou só os da organização do usuário."""
+    all_sensors = db.query(Sensor).all()
+    sensors = {s.id: s for s in all_sensors if organization_id is None or s.organization_id == organization_id}
+    foreign = {s.id for s in all_sensors if s.id not in sensors}
     varieties: dict[str, str] = {}
     for v in db.query(Variety).all():
         varieties[v.id] = v.id
         varieties[_norm(v.name).replace("_", "-")] = v.id
         varieties[_norm(v.name)] = v.id
-    return Context(db, sensors, varieties)
+    return Context(db, sensors, varieties, foreign_sensors=foreign)
 
 
 def _existing_keys(db: Session, kind: str, keys: list[tuple]) -> set[tuple]:
@@ -372,7 +379,7 @@ class ImportResult:
     columns: list[str] = field(default_factory=list)
 
 
-def analyze_file(db: Session, kind: str, filename: str, data: bytes) -> ImportResult:
+def analyze_file(db: Session, kind: str, filename: str, data: bytes, organization_id: int | None = None) -> ImportResult:
     if kind not in KINDS:
         raise ImportError_("Tipo de importação inválido.")
     rows = read_table(filename, data)
@@ -384,7 +391,7 @@ def analyze_file(db: Session, kind: str, filename: str, data: bytes) -> ImportRe
     missing = [c for c in REQUIRED[kind] if c not in columns]
     if missing:
         raise ImportError_(f"Colunas obrigatórias ausentes: {', '.join(missing)}. Baixe o modelo para ver o formato esperado.")
-    ctx = _context(db)
+    ctx = _context(db, organization_id)
     validator = VALIDATORS[kind]
     accepted: list[tuple[tuple, dict]] = []
     for i, row in enumerate(rows, start=2):  # linha 1 = cabeçalho
@@ -415,7 +422,7 @@ def sample(records: list[tuple[tuple, dict]], n: int = 20) -> list[dict]:
     return out
 
 
-def persist(db: Session, result: ImportResult, on_duplicate: str, user_id: int | None) -> tuple[int, int]:
+def persist(db: Session, result: ImportResult, on_duplicate: str, user_id: int | None, organization_id: int | None = None) -> tuple[int, int]:
     """Grava as linhas válidas (e atualiza duplicados, se pedido). Retorna (inseridas, atualizadas)."""
     inserted = updated = 0
     if result.kind == "readings":
@@ -440,7 +447,7 @@ def persist(db: Session, result: ImportResult, on_duplicate: str, user_id: int |
                     updated += 1
     elif result.kind == "sensors":
         for _, r in result.valid:
-            db.add(Sensor(**r, active=True))
+            db.add(Sensor(**r, active=True, organization_id=organization_id))
             inserted += 1
         if on_duplicate == "update":
             for (sid,), r in result.duplicates:

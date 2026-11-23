@@ -98,6 +98,8 @@ def to_sensor_out(s: Sensor, stats: dict | None = None, now: datetime | None = N
         analyses_count=st["count"],
         last_reading_at=from_db(st["last"]),
         quality_ratio=round(st["boa"] / st["count"], 4) if st["count"] else None,
+        organization_id=s.organization_id,
+        organization_name=s.organization.name if s.organization else None,
     )
 
 

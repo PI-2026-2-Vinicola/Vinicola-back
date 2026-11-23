@@ -14,9 +14,9 @@ from sqlalchemy.exc import IntegrityError
 
 from . import __version__
 from .config import DEFAULT_JWT_SECRET, get_settings
-from .database import Base, SessionLocal, engine, ensure_columns
-from .routers import auth, imports, ingest, integrations, readings, sensors, stats, system, users
-from .seed import bootstrap_admin, seed_catalog
+from .database import Base, SessionLocal, engine, ensure_columns, ensure_role_constraint
+from .routers import auth, clients, imports, ingest, integrations, organizations, readings, sensors, stats, system, users
+from .seed import bootstrap_admin, ensure_default_organization, seed_catalog
 from .services.detector import get_detector
 from .services.external import ExternalServiceError
 from .services.storage import StorageError, get_storage
@@ -57,9 +57,12 @@ async def lifespan(_: FastAPI):
     added = ensure_columns(engine)
     if added:
         log.info("Banco atualizado: colunas adicionadas %s", ", ".join(added))
+    if ensure_role_constraint(engine):
+        log.info("Banco atualizado: perfil cliente aceito na tabela de usuários")
     with SessionLocal() as db:
         try:
             seed_catalog(db)
+            ensure_default_organization(db)
             bootstrap_admin(db)
         except IntegrityError:
             # Outro processo (ex.: recarregador do uvicorn) inicializou o banco ao mesmo tempo.
@@ -177,7 +180,7 @@ async def unhandled_handler(request: Request, exc: Exception):
 
 
 API_PREFIX = "/api/v1"
-for r in (auth.router, users.router, sensors.router, readings.router, ingest.router, stats.router, imports.router, system.router, integrations.router):
+for r in (auth.router, users.router, organizations.router, clients.router, sensors.router, readings.router, ingest.router, stats.router, imports.router, system.router, integrations.router):
     app.include_router(r, prefix=API_PREFIX)
 
 
