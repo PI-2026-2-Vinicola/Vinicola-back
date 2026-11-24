@@ -1,6 +1,5 @@
 """Itens de produção: saúde com banco, cabeçalhos de segurança, IP do cliente e validação do .env."""
 
-import base64
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -12,7 +11,6 @@ from app.routers.auth import reset_login_attempts
 from .conftest import API
 
 STRONG_SECRET = "s" * 48
-DATA_KEY = base64.b64encode(b"chave-ficticia-de-teste-32-bytes").decode()  # 32 bytes, gerada no teste
 
 
 def test_health_reports_database(client):
@@ -49,7 +47,7 @@ def test_forged_forwarded_for_does_not_bypass_the_ip_lockout(client):
 
 
 def _prod(**overrides) -> Settings:
-    values = {"environment": "production", "jwt_secret": STRONG_SECRET, "public_read": False, "oasis_admin_password": "", "data_encryption_key": DATA_KEY,
+    values = {"environment": "production", "jwt_secret": STRONG_SECRET, "public_read": False, "oasis_admin_password": "",
               "cors_origins": "https://oasis.example.com", "database_url": "postgresql+psycopg://oasis:x@db:5432/oasis"}
     return Settings(_env_file=None, **(values | overrides))
 

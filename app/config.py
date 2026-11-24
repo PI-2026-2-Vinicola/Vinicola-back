@@ -22,13 +22,6 @@ class Settings(BaseSettings):
     jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_expires_minutes: int = 480
 
-    # Chave AES-256 (32 bytes em base64) dos dados sensíveis gravados no banco (clientes internacionais).
-    # Vazia = chave de desenvolvimento (a produção recusa). Gere com:
-    #   python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"
-    data_encryption_key: str = ""
-    # Chaves anteriores (separadas por vírgula), usadas só para ler dados gravados antes de uma troca de chave.
-    data_encryption_old_keys: str = ""
-
     # Usuário administrador criado na primeira inicialização (quando não há usuários).
     oasis_admin_email: str = "admin@oasis.agr.br"
     oasis_admin_name: str = "Administrador OASIS"
@@ -123,8 +116,7 @@ class Settings(BaseSettings):
             raise ValueError('STORAGE_BACKEND deve ser "local" ou "s3".')
         return v
 
-    @field_validator("s3_endpoint_url", "s3_region", "s3_bucket", "s3_access_key_id", "s3_secret_access_key", "client_ip_header",
-                     "data_encryption_key", "data_encryption_old_keys")
+    @field_validator("s3_endpoint_url", "s3_region", "s3_bucket", "s3_access_key_id", "s3_secret_access_key", "client_ip_header")
     @classmethod
     def _strip_text(cls, v: str) -> str:
         return v.strip()
@@ -196,11 +188,6 @@ class Settings(BaseSettings):
             problems.append("PUBLIC_READ deve ser false em produção.")
         if any(o == "*" for o in self.cors_list):
             problems.append("CORS_ORIGINS não pode ser '*'.")
-        from .crypto import key_problem  # import tardio: crypto depende das configurações
-
-        problem = key_problem(self.data_encryption_key)
-        if problem:
-            problems.append(problem)
         if self.s3_missing:
             problems.append(f"STORAGE_BACKEND=s3 exige {', '.join(self.s3_missing)}.")
         if self.oasis_admin_password and len(self.oasis_admin_password) < 12:

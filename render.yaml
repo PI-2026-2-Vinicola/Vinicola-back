@@ -22,10 +22,6 @@ services:
         value: production       # ativa as travas de produção (segredos fortes, /docs desligado)
       - key: JWT_SECRET
         generateValue: true     # gerado pelo Render (256 bits aleatórios)
-      # Chave AES-256 dos dados sensíveis cifrados no banco: o Render gera 256 bits aleatórios em base64.
-      # Copie-a para um gerenciador de senhas: sem ela os dados cifrados (e os backups) não podem ser lidos.
-      - key: DATA_ENCRYPTION_KEY
-        generateValue: true
       # Banco gerenciado: Supabase → Connect → Session pooler (porta 5432), com o usuário oasis_api
       # (deploy/supabase/papeis.sql). Formato: postgresql://oasis_api.<ref>:<senha>@<host-do-pooler>:5432/postgres
       - key: DATABASE_URL

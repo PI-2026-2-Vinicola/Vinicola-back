@@ -6,8 +6,8 @@ A matriz abaixo é a única fonte das permissões: as rotas da API a consultam (
 gera a tabela da documentação a partir dela.
 
 Isolamento: o administrador é da plataforma e vê todas as organizações. Os demais perfis pertencem a uma
-organização (exportadora) e só alcançam os dados dela. O perfil cliente alcança apenas o próprio cadastro
-de cliente internacional. Toda negação fica registrada na auditoria como "acesso_negado".
+organização (exportadora) e só alcançam os dados dela. Toda negação fica registrada na auditoria como
+"acesso_negado".
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ ROLE_LABEL = {
     "admin": "Administrador",
     "gestor": "Exportadora (gestor)",
     "operador": "Operador de campo e logística",
-    "cliente": "Cliente internacional",
 }
 
 ACTION_LABEL = {"C": "criar", "R": "consultar", "U": "atualizar", "D": "excluir"}
@@ -38,8 +37,8 @@ MATRIX: dict[str, tuple[str, dict[str, str], dict[str, str]]] = {
     "usuarios": ("Usuários", {"admin": "CRUD"}, {}),
     "organizacoes": (
         "Organizações (exportadoras)",
-        {"admin": "CRUD", "gestor": "R", "operador": "R", "cliente": "R"},
-        {"gestor": "própria", "operador": "própria", "cliente": "própria"},
+        {"admin": "CRUD", "gestor": "R", "operador": "R"},
+        {"gestor": "própria", "operador": "própria"},
     ),
     "sensores": (
         "Sensores IoT",
@@ -48,23 +47,18 @@ MATRIX: dict[str, tuple[str, dict[str, str], dict[str, str]]] = {
     ),
     "leituras": (
         "Análises de qualidade (fotos, histórico e indicadores)",
-        {"admin": "CRD", "gestor": "CRD", "operador": "CR", "cliente": "R"},
-        {"gestor": "própria organização", "operador": "própria organização", "cliente": "exportadora contratada"},
+        {"admin": "CRD", "gestor": "CRD", "operador": "CR"},
+        {"gestor": "própria organização", "operador": "própria organização"},
     ),
     "medicoes": (
         "Dados climáticos (temperatura, umidade, luz, solo)",
-        {"admin": "CR", "gestor": "CR", "operador": "CR", "cliente": "R"},
-        {"gestor": "própria organização", "operador": "própria organização", "cliente": "exportadora contratada"},
+        {"admin": "CR", "gestor": "CR", "operador": "CR"},
+        {"gestor": "própria organização", "operador": "própria organização"},
     ),
     "importacoes": (
         "Importação de dados",
         {"admin": "CR", "gestor": "CR"},
         {"gestor": "própria organização"},
-    ),
-    "clientes": (
-        "Clientes internacionais (dados sensíveis cifrados)",
-        {"admin": "CRUD", "gestor": "CRUD", "cliente": "R"},
-        {"gestor": "própria organização", "cliente": "somente o próprio cadastro"},
     ),
     "auditoria": ("Auditoria", {"admin": "R"}, {}),
     "sistema": ("Configurações e estado do sistema", {"admin": "R"}, {}),

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from pydantic.alias_generators import to_camel
 
 Quality = Literal["boa", "atencao", "critica"]
-Role = Literal["admin", "gestor", "operador", "cliente"]
+Role = Literal["admin", "gestor", "operador"]
 SensorStatus = Literal["online", "atencao", "offline", "inativo"]
 ImportKind = Literal["readings", "sensors", "environment"]
 
@@ -34,7 +34,6 @@ class UserOut(CamelModel):
     role: Role
     organization_id: int | None = None
     organization_name: str | None = None
-    client_id: int | None = None
     is_active: bool
     created_at: datetime
     last_login_at: datetime | None = None
@@ -71,10 +70,8 @@ class UserCreateIn(CamelModel):
     email: str = Field(max_length=160)
     role: Role
     password: str = Field(max_length=200)
-    # Obrigatória para gestor, operador e cliente (vazia = organização padrão); o administrador é da plataforma.
+    # Obrigatória para gestor e operador (vazia = organização padrão); o administrador é da plataforma.
     organization_id: int | None = None
-    # Cliente internacional ligado ao usuário de perfil cliente.
-    client_id: int | None = None
 
     _pw = field_validator("password")(check_password)
 
@@ -91,7 +88,6 @@ class UserUpdateIn(CamelModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
     role: Role | None = None
     organization_id: int | None = None
-    client_id: int | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, max_length=200)
 
@@ -686,7 +682,7 @@ class IntegrationsStatus(CamelModel):
     yolo_loaded: bool
 
 
-# ------------------------------------------------------------------ organizações e clientes internacionais
+# ------------------------------------------------------------------ organizações
 class OrganizationOut(CamelModel):
     id: int
     name: str
@@ -694,7 +690,6 @@ class OrganizationOut(CamelModel):
     active: bool
     users: int = 0
     sensors: int = 0
-    clients: int = 0
     created_at: datetime
 
 
@@ -707,57 +702,3 @@ class OrganizationUpdateIn(CamelModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
     city: str | None = Field(default=None, max_length=80)
     active: bool | None = None
-
-
-def _optional_email(v: str | None) -> str | None:
-    if v:
-        v = v.strip().lower()
-        if not EMAIL_RE.match(v):
-            raise ValueError("E-mail inválido.")
-    return v or None
-
-
-class ClientOut(CamelModel):
-    """Cliente internacional. Na listagem os campos sensíveis vêm mascarados; no detalhe, decifrados."""
-
-    id: int
-    organization_id: int
-    organization_name: str | None = None
-    company_name: str
-    country: str
-    contact_name: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    tax_id: str | None = None
-    commercial_terms: str | None = None
-    masked: bool
-    protected_fields: list[str]
-    active: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-class ClientIn(CamelModel):
-    company_name: str = Field(min_length=2, max_length=120)
-    country: str = Field(min_length=2, max_length=60)
-    contact_name: str | None = Field(default=None, max_length=120)
-    email: str | None = Field(default=None, max_length=160)
-    phone: str | None = Field(default=None, max_length=40)
-    tax_id: str | None = Field(default=None, max_length=40)
-    commercial_terms: str | None = Field(default=None, max_length=2000)
-    organization_id: int | None = None  # só o administrador escolhe; o gestor cadastra na própria organização
-
-    _email = field_validator("email")(lambda v: _optional_email(v))
-
-
-class ClientUpdateIn(CamelModel):
-    company_name: str | None = Field(default=None, min_length=2, max_length=120)
-    country: str | None = Field(default=None, min_length=2, max_length=60)
-    contact_name: str | None = Field(default=None, max_length=120)
-    email: str | None = Field(default=None, max_length=160)
-    phone: str | None = Field(default=None, max_length=40)
-    tax_id: str | None = Field(default=None, max_length=40)
-    commercial_terms: str | None = Field(default=None, max_length=2000)
-    active: bool | None = None
-
-    _email = field_validator("email")(lambda v: _optional_email(v))

@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from . import __version__
 from .config import DEFAULT_JWT_SECRET, get_settings
 from .database import Base, SessionLocal, engine, ensure_columns, ensure_role_constraint
-from .routers import auth, clients, imports, ingest, integrations, organizations, readings, sensors, stats, system, users
+from .routers import auth, imports, ingest, integrations, organizations, readings, sensors, stats, system, users
 from .seed import bootstrap_admin, ensure_default_organization, seed_catalog
 from .services.detector import get_detector
 from .services.external import ExternalServiceError
@@ -180,7 +180,7 @@ async def unhandled_handler(request: Request, exc: Exception):
 
 
 API_PREFIX = "/api/v1"
-for r in (auth.router, users.router, organizations.router, clients.router, sensors.router, readings.router, ingest.router, stats.router, imports.router, system.router, integrations.router):
+for r in (auth.router, users.router, organizations.router, sensors.router, readings.router, ingest.router, stats.router, imports.router, system.router, integrations.router):
     app.include_router(r, prefix=API_PREFIX)
 
 

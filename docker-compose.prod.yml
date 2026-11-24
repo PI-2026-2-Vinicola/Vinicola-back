@@ -1,6 +1,6 @@
 # Produção: PostgreSQL + API + Caddy (HTTPS automático com Let's Encrypt). Guia: docs/producao.md
 #   git clone https://github.com/PI-2026-2-Vinicola/Vinicola-bd ../Vinicola-bd
-#   cp .env.example .env    # OASIS_DOMAIN, JWT_SECRET, DATA_ENCRYPTION_KEY, POSTGRES_PASSWORD, OASIS_ADMIN_PASSWORD e CORS_ORIGINS
+#   cp .env.example .env    # OASIS_DOMAIN, JWT_SECRET, POSTGRES_PASSWORD, OASIS_ADMIN_PASSWORD e CORS_ORIGINS
 #   docker compose -f docker-compose.prod.yml up -d --build
 # Só o Caddy publica portas (80 e 443). A API e o banco ficam na rede interna do compose.
 name: oasis

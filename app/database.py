@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Iterator
 
@@ -5,6 +6,8 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
+
+log = logging.getLogger("oasis.database")
 
 
 class Base(DeclarativeBase):
@@ -45,13 +48,12 @@ def get_db() -> Iterator[Session]:
 ADDED_COLUMNS = [
     ("readings", "predicted_variety", "VARCHAR(40)"),
     ("readings", "variety_confidence", "FLOAT"),
-    # isolamento por organização (exportadora) e perfil cliente internacional
+    # isolamento por organização (exportadora)
     ("users", "organization_id", "INTEGER"),
-    ("users", "client_id", "INTEGER"),
     ("sensors", "organization_id", "INTEGER"),
     ("import_jobs", "organization_id", "INTEGER"),
 ]
-ROLES = ("admin", "gestor", "operador", "cliente")
+ROLES = ("admin", "gestor", "operador")
 
 
 def ensure_columns(bind=None) -> list[str]:
@@ -68,9 +70,11 @@ def ensure_columns(bind=None) -> list[str]:
 
 def ensure_role_constraint(bind=None) -> bool:
     """
-    Bancos criados antes do perfil "cliente" têm a restrição ck_users_role só com admin, gestor e operador.
-    Troca a restrição pela lista atual (mais permissiva, então os dados existentes continuam válidos).
-    Devolve True se alterou.
+    Bancos que passaram pela versão com o perfil "cliente" (cliente internacional, já removido) têm esse
+    perfil na restrição ck_users_role. Os usuários com ele viram operadores DESATIVADOS (nenhum acesso
+    novo é concedido; o administrador decide se reativa) e a restrição volta à lista atual.
+    Devolve True se alterou. A tabela antiga international_clients não é apagada aqui (sem perda de dados);
+    o script 07 do Vinicola-bd faz a limpeza.
     """
     bind = bind or engine
     if not inspect(bind).has_table("users"):
@@ -80,34 +84,37 @@ def ensure_role_constraint(bind=None) -> bool:
     dialect = bind.dialect.name
     with bind.begin() as conn:
         if dialect == "sqlite":
-            sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")).scalar() or ""
-            if "'cliente'" in sql or "ck_users_role" not in sql:
-                return False
-            # Procedimento da documentação do SQLite para afrouxar uma restrição CHECK sem recriar a tabela.
-            new_sql = re.sub(r"role IN \([^)]*\)", check, sql)
+            definition = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")).scalar() or ""
+        elif dialect == "postgresql":
+            definition = conn.execute(text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='ck_users_role' AND conrelid='users'::regclass"
+            )).scalar() or ""
+        elif dialect in ("mysql", "mariadb"):
+            definition = conn.execute(text(
+                "SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS "
+                "WHERE CONSTRAINT_NAME='ck_users_role' AND CONSTRAINT_SCHEMA=DATABASE()"
+            )).scalar() or ""
+        else:
+            return False
+        if "cliente" not in definition:
+            return False
+        retired = conn.execute(text("UPDATE users SET role='operador', is_active=:off WHERE role='cliente'"), {"off": False}).rowcount
+        if retired:
+            log.warning("%s usuário(s) do perfil cliente, que foi removido, viraram operadores desativados.", retired)
+        if dialect == "sqlite":
+            # Procedimento da documentação do SQLite para trocar uma restrição CHECK sem recriar a tabela.
+            new_sql = re.sub(r"role IN \([^)]*\)", check, definition)
             version = conn.execute(text("PRAGMA schema_version")).scalar()
             conn.execute(text("PRAGMA writable_schema=ON"))
             conn.execute(text("UPDATE sqlite_master SET sql=:sql WHERE type='table' AND name='users'"), {"sql": new_sql})
             conn.execute(text(f"PRAGMA schema_version={int(version) + 1}"))
             conn.execute(text("PRAGMA writable_schema=OFF"))
         elif dialect == "postgresql":
-            definition = conn.execute(text(
-                "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='ck_users_role' AND conrelid='users'::regclass"
-            )).scalar() or ""
-            if "cliente" in definition:
-                return False
             conn.execute(text("ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_role"))
             conn.execute(text(f"ALTER TABLE users ADD CONSTRAINT ck_users_role CHECK ({check})"))
-        elif dialect in ("mysql", "mariadb"):
-            definition = conn.execute(text(
-                "SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_NAME='ck_users_role'"
-            )).scalar() or ""
-            if "cliente" in definition:
-                return False
+        else:
             conn.execute(text("ALTER TABLE users DROP CHECK ck_users_role"))
             conn.execute(text(f"ALTER TABLE users ADD CONSTRAINT ck_users_role CHECK ({check})"))
-        else:
-            return False
     if dialect == "sqlite":
         bind.dispose()  # conexões abertas guardam o esquema antigo
     return True
