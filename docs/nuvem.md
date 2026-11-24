@@ -181,7 +181,6 @@ Desenvolvimento e produção usam o mesmo código e mudam só as variáveis. Os 
 | `ENVIRONMENT` | `development` (aceita segredo padrão, `/docs` ligado) | `production` (recusa configuração insegura, `/docs` desligado) |
 | `DATABASE_URL` | `sqlite:///./oasis.db` | Supabase, usuário `oasis_api` (segredo) |
 | `JWT_SECRET` | vazio (segredo de desenvolvimento) | gerado pelo Render |
-| `DATA_ENCRYPTION_KEY` | vazio (chave de desenvolvimento) | gerada pelo Render; guarde uma cópia (sem ela os dados cifrados se perdem) |
 | `STORAGE_BACKEND` | `local` (pasta `storage/`) | `s3` |
 | `S3_*` | vazios | Supabase Storage (segredos) |
 | `OASIS_ADMIN_EMAIL` / `OASIS_ADMIN_PASSWORD` | opcionais | segredos |

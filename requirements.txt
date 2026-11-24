@@ -5,7 +5,6 @@ pydantic>=2.7
 pydantic-settings>=2.3
 python-multipart>=0.0.9
 pyjwt>=2.8
-cryptography>=43   # criptografia AES-256-GCM dos dados sensíveis (clientes internacionais)
 pillow>=10.3
 numpy>=1.26          # análise de cor das imagens
 openpyxl>=3.1        # importação de planilhas Excel (.xlsx)

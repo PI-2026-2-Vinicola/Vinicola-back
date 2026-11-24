@@ -13,7 +13,7 @@ def utcnow() -> datetime:
 
 
 class Organization(Base):
-    """Exportadora (ou propriedade) dona dos sensores, leituras e clientes. Os dados de uma não aparecem para outra."""
+    """Exportadora (ou propriedade) dona dos sensores, leituras e importações. Os dados de uma não aparecem para outra."""
 
     __tablename__ = "organizations"
 
@@ -24,13 +24,13 @@ class Organization(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-ROLES_SQL = "role IN ('admin','gestor','operador','cliente')"
+ROLES_SQL = "role IN ('admin','gestor','operador')"
 
 
 class User(Base):
     """
     Usuário. O administrador é da plataforma (sem organização); os demais perfis pertencem a uma
-    organização e só enxergam os dados dela. O perfil cliente é ligado a um cliente internacional.
+    organização e só enxergam os dados dela.
     """
 
     __tablename__ = "users"
@@ -42,7 +42,6 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20))
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
-    client_id: Mapped[int | None] = mapped_column(ForeignKey("international_clients.id", ondelete="SET NULL"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -52,33 +51,6 @@ class User(Base):
     @property
     def organization_name(self) -> str | None:
         return self.organization.name if self.organization else None
-
-
-class InternationalClient(Base):
-    """
-    Cliente internacional (importador) de uma exportadora. Nome da empresa e país ficam legíveis para
-    listagens; contato, e-mail, telefone, identificação fiscal e condições comerciais ficam cifrados
-    (AES-256-GCM, app/crypto.py) e só são decifrados na API para quem tem permissão.
-    """
-
-    __tablename__ = "international_clients"
-    __table_args__ = (UniqueConstraint("organization_id", "company_name", name="uq_clients_org_company"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
-    company_name: Mapped[str] = mapped_column(String(120))
-    country: Mapped[str] = mapped_column(String(60))
-    contact_name_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    email_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    phone_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tax_id_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    commercial_terms_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
-
-    organization: Mapped[Organization] = relationship(lazy="joined")
 
 
 class Variety(Base):

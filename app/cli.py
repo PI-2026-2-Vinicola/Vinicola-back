@@ -128,14 +128,12 @@ def main(argv: list[str] | None = None) -> None:
     c = sub.add_parser("create-user", help="Cria um usuário")
     c.add_argument("--name", required=True)
     c.add_argument("--email", required=True)
-    c.add_argument("--role", choices=["admin", "gestor", "operador", "cliente"], required=True)
+    c.add_argument("--role", choices=["admin", "gestor", "operador"], required=True)
     c.add_argument("--password")
-    c.add_argument("--organizacao", type=int, help="id da organização (gestor, operador e cliente; vazio = organização padrão)")
-    c.add_argument("--cliente", type=int, help="id do cliente internacional (obrigatório para o perfil cliente)")
-    ds = sub.add_parser("demo-seguranca", help="Cria duas exportadoras, usuários de cada perfil e clientes com dados cifrados")
+    c.add_argument("--organizacao", type=int, help="id da organização (gestor e operador; vazio = organização padrão)")
+    ds = sub.add_parser("demo-seguranca", help="Cria duas exportadoras com sensor, gestor e operador (demonstração do controle de acesso)")
     ds.add_argument("--senha", help="mesma senha para todos os usuários criados (padrão: aleatória e exibida uma vez)")
     sub.add_parser("matriz-rbac", help="Imprime a matriz de permissões (perfis × recursos) aplicada pela API")
-    sub.add_parser("recifrar-dados", help="Recifra com a DATA_ENCRYPTION_KEY atual os dados gravados com chaves antigas")
     r = sub.add_parser("reset-password", help="Redefine a senha de um usuário (e o reativa)")
     r.add_argument("--email", required=True)
     r.add_argument("--password")
@@ -178,16 +176,16 @@ def main(argv: list[str] | None = None) -> None:
 
             try:
                 data = UserCreateIn(name=args.name, email=args.email, role=args.role, password=_ask_password(args.password),
-                                    organization_id=args.organizacao, client_id=args.cliente)
+                                    organization_id=args.organizacao)
             except ValueError as exc:
                 sys.exit(str(exc))
             if db.query(User).filter(User.email == data.email).first():
                 sys.exit(f"Já existe um usuário com o e-mail {data.email}.")
             try:
-                org_id, client_id = _membership(db, data.role, data.organization_id, data.client_id)
+                org_id = _membership(db, data.role, data.organization_id)
             except HTTPException as exc:
                 sys.exit(str(exc.detail))
-            db.add(User(name=data.name, email=data.email, role=data.role, password_hash=hash_secret(data.password), organization_id=org_id, client_id=client_id))
+            db.add(User(name=data.name, email=data.email, role=data.role, password_hash=hash_secret(data.password), organization_id=org_id))
             audit(db, "usuario_criado", actor="cli", target=data.email, details={"perfil": data.role, "organizacao": org_id})
             print(f"Usuário {data.email} ({data.role}) criado.")
         elif args.command == "demo-seguranca":
@@ -205,11 +203,6 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"{u['organizacao']:<26} {u['perfil']:<9} {u['email']:<32} senha: {u['senha']}")
             if created and not args.senha:
                 print("Guarde as senhas: elas não serão exibidas novamente.")
-        elif args.command == "recifrar-dados":
-            from .routers.clients import rewrap_all
-
-            total = rewrap_all(db)
-            print(f"{total} cadastro(s) recifrado(s) com a chave atual. As chaves de DATA_ENCRYPTION_OLD_KEYS já podem ser removidas.")
         elif args.command == "reset-password":
             user = db.query(User).filter(User.email == args.email.strip().lower()).first()
             if not user:

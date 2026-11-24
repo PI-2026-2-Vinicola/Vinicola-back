@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import client_ip
-from ..models import InternationalClient, Organization, Sensor, User
+from ..models import Organization, Sensor, User
 from ..rbac import check_organization, require, tenant
 from ..schemas import OrganizationIn, OrganizationOut, OrganizationUpdateIn
 from ..services.audit import audit
@@ -21,10 +21,10 @@ def _counts(db: Session, model, ids: list[int]) -> dict[int, int]:
 
 def _out(db: Session, orgs: list[Organization]) -> list[OrganizationOut]:
     ids = [o.id for o in orgs]
-    users, sensors, clients = _counts(db, User, ids), _counts(db, Sensor, ids), _counts(db, InternationalClient, ids)
+    users, sensors = _counts(db, User, ids), _counts(db, Sensor, ids)
     return [
         OrganizationOut(id=o.id, name=o.name, city=o.city, active=o.active, users=users.get(o.id, 0), sensors=sensors.get(o.id, 0),
-                        clients=clients.get(o.id, 0), created_at=o.created_at)
+                        created_at=o.created_at)
         for o in orgs
     ]
 
@@ -86,8 +86,8 @@ def update_organization(organization_id: int, body: OrganizationUpdateIn, reques
 def delete_organization(organization_id: int, request: Request, db: Session = Depends(get_db), admin: User = Depends(require("organizacoes", "D"))):
     org = get_organization(db, organization_id)
     out = _out(db, [org])[0]
-    if out.users or out.sensors or out.clients:
-        raise HTTPException(status.HTTP_409_CONFLICT, "A organização tem usuários, sensores ou clientes. Remova-os ou desative a organização.")
+    if out.users or out.sensors:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A organização tem usuários ou sensores. Remova-os ou desative a organização.")
     db.delete(org)
     audit(db, "organizacao_excluida", actor=admin.email, target=org.name, ip=client_ip(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
